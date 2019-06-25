@@ -1,3 +1,4 @@
+#include <generated/autoconf.h>
 #include <dt-bindings/clock/rk_system_status.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/rkfb/rk_fb.h>
@@ -57,6 +58,15 @@
 			compatible = "arm,cortex-a15";
 			reg = <0x503>;
 		};
+	};
+
+	psci {
+		compatible	= "arm,psci";
+		method		= "smc";
+		cpu_suspend	= <0x84000001>;
+		cpu_off		= <0x84000002>;
+		cpu_on		= <0x84000003>;
+		affinity_info	= <0x84000004>;
 	};
 
 	gic: interrupt-controller@ffc01000 {
@@ -198,12 +208,21 @@
 		clock-frequency = <24000000>;
 	};
 
+#ifdef CONFIG_ARM_TRUSTZONE
+	timer@ff6b0000 {
+		compatible = "rockchip,timer";
+		reg = <0xff6b0000 0x20>;
+		interrupts = <GIC_SPI 66 IRQ_TYPE_LEVEL_HIGH>;
+		rockchip,broadcast = <1>;
+	};
+#else
 	timer@ff810000 {
 		compatible = "rockchip,timer";
 		reg = <0xff810000 0x20>;
 		interrupts = <GIC_SPI 72 IRQ_TYPE_LEVEL_HIGH>;
 		rockchip,broadcast = <1>;
 	};
+#endif
 
 	watchdog: wdt@2004c000 {
 		compatible = "rockchip,watch dog";
@@ -225,9 +244,15 @@
 		interrupt-parent = <&gic>;
 		ranges;
 
+#ifdef CONFIG_ARM_TRUSTZONE
+		pdma0: pdma@ff600000 {
+			compatible = "arm,pl330", "arm,primecell";
+			reg = <0xff600000 0x4000>;
+#else
 		pdma0: pdma@ffb20000 {
 			compatible = "arm,pl330", "arm,primecell";
 			reg = <0xffb20000 0x4000>;
+#endif
 			clocks = <&clk_gates10 12>;
 			clock-names = "apb_pclk";
 			interrupts = <GIC_SPI 0 IRQ_TYPE_LEVEL_HIGH>,
@@ -291,8 +316,8 @@
 		fifo-depth = <0x100>;
 		bus-width = <8>;
 		tune_regsbase = <0x218>;
-		cru_regsbase = <0x1d8>;
-		cru_reset_offset = <3>;
+		resets = <&reset RK3288_SOFT_RST_EMMC>;
+		reset-names = "mmc_ahb_reset";
 	};
 
 	sdmmc: rksdmmc@ff0c0000 {
@@ -312,8 +337,8 @@
 		fifo-depth = <0x100>;
 		bus-width = <4>;
 		tune_regsbase = <0x200>;
-		cru_regsbase = <0x1d8>;
-		cru_reset_offset = <0>;
+		resets = <&reset RK3288_SOFT_RST_MMC0>;
+		reset-names = "mmc_ahb_reset";
 	};
 
 	sdio: rksdmmc@ff0d0000 {
@@ -332,8 +357,8 @@
 		fifo-depth = <0x100>;
 		bus-width = <4>;
 		tune_regsbase = <0x208>;
-		cru_regsbase = <0x1d8>;
-		cru_reset_offset = <1>;
+		resets = <&reset RK3288_SOFT_RST_SDIO0>;
+		reset-names = "mmc_ahb_reset";
 	};
 
 	sdio1: rksdmmc@ff0e0000 {
@@ -354,9 +379,9 @@
 		num-slots = <1>;
 		fifo-depth = <0x100>;
 		bus-width = <4>;
-		cru_regsbase = <0x1d8>;
-		cru_reset_offset = <2>;
 		status = "disabled";
+		resets = <&reset RK3288_SOFT_RST_SDIO1>;
+		reset-names = "mmc_ahb_reset";
 	};
 
 	spi0: spi@ff110000 {
@@ -499,6 +524,9 @@
 		rockchip,serial-id = <2>;
 		rockchip,signal-irq = <106>;
 		rockchip,wake-irq = <0>;
+#ifdef CONFIG_ARM_TRUSTZONE
+		rockchip,irq-mode-enable = <1>;  /* If enable uart uses irq instead of fiq */
+#endif
 		status = "disabled";
 	};
 
@@ -525,7 +553,8 @@
 			<&clk_vepu 300000000>, <&clk_vdpu 300000000>,
 			<&clk_edp 200000000>, <&clk_isp 200000000>,
 			<&clk_isp_jpe 400000000>, <&clk_tsp 80000000>,
-			<&clk_tspout 80000000>, <&clk_mac 125000000>;
+			<&clk_tspout 80000000>, <&clk_mac 125000000>,
+			<&aclk_vio0 594000000>, <&usbphy_480m 480000000>;
 		/* rockchip,clocks-uboot-has-init = <&aclk_vio0>; */
 	};
 
@@ -710,6 +739,16 @@
 		status = "disabled";
 	};
 
+	crypto: rockchip-crypto@ff8a0000 {
+		compatible = "rockchip-crypto";
+		reg = <0xff8a0000 0x10000>;
+		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "irq_crypto";
+		clocks = <&clk_crypto>, <&clk_gates11 6>, <&clk_gates11 7>;
+		clock-names = "clk_crypto", "aclk_crypto", "hclk_crypto";
+		status = "disabled";
+	};
+
 	fb: fb{
 		compatible = "rockchip,rk-fb";
 		rockchip,disp-mode = <DUAL>;
@@ -767,6 +806,15 @@
 		rockchip,hdmi_audio_source = <0>;
 		rockchip,hdcp_enable = <0>;
 		rockchip,cec_enable = <0>;
+		status = "disabled";
+	};
+
+	hdmi_hdcp2: hdmi_hdcp2@ff974000 {
+		compatible = "rockchip,rk3288-hdmi-hdcp2";
+		reg = <0xff974000 0x4000>,
+		      <0xff978000 0x4000>;
+		clocks = <&aclk_hdcp>, <&clk_hdcp>, <&clk_gates15 12>;
+		clock-names = "aclk_hdcp2", "hdcp2_clk_hdmi", "pclk_hdcp2";
 		status = "disabled";
 	};
 
@@ -946,6 +994,7 @@
 						>;
 
 					channel = <0>;
+					tsadc-ch = <1>;
 					temp-limit-enable = <1>;
 					target-temp = <80>;
 					min_temp_limit = <48>;
@@ -961,6 +1010,10 @@
 					performance-temp-limit = <
 						/* temp freq */
 						100     816000
+						>;
+					lkg-adjust-temp = <
+						/*lkg   delta-temp*/
+						40      20
 						>;
 
 					regu-mode-table = <
@@ -1026,6 +1079,7 @@
 						>;
 
 					channel = <1>;
+					tsadc-ch = <2>;
 					temp-limit-enable = <0>;
 					target-temp = <90>;
 					min_temp_limit = <200>;
@@ -1075,7 +1129,7 @@
 
 	vpu: vpu_service@ff9a0000 {
 		compatible = "vpu_service";
-		iommu_enabled = <0>;
+		iommu_enabled = <1>;
 		reg = <0xff9a0000 0x800>;
 		interrupts = <GIC_SPI 9 IRQ_TYPE_LEVEL_HIGH>,
 			     <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>;
@@ -1092,7 +1146,7 @@
 
 	hevc: hevc_service@ff9c0000 {
 		compatible = "rockchip,hevc_service";
-		iommu_enabled = <0>;
+		iommu_enabled = <1>;
 		reg = <0xff9c0000 0x800>;
 		interrupts = <GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "irq_dec";
@@ -1209,7 +1263,7 @@
 		interrupts = <GIC_SPI 41 IRQ_TYPE_LEVEL_HIGH>;
 		clocks = <&clk_gates13 5>, <&clk_gates7 6>;
 		clock-names = "clk_usbphy3", "hclk_usb3";
-		status = "disabled";
+		status = "okay";
 	};
 
 	usb4: usb@ff5c0000 {
@@ -1382,6 +1436,17 @@
 		pinctrl-names = "cif_pin_all";
 		pinctrl-0 = <&isp_mipi &isp_dvp_d2d9 &isp_dvp_d10d11>;
 		status = "okay";
+	};
+
+	ps2c: rockchip-ps2c@ff260000 {
+		compatible = "rockchip,ps2c";
+		reg = <0xff260000 0x10000>;
+		clocks = <&clk_gates5 13>, <&clk_gates6 7>;
+		clock-names = "clk_ps2c", "pclk_ps2c";
+		interrupts = <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ps2_data &ps2_clk>;
+		status = "disabled";
 	};
 
 	tsadc: tsadc@ff280000 {

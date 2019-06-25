@@ -594,7 +594,7 @@ static irqreturn_t rockchip_iommu_irq(int irq, void *dev_id)
 				report_iommu_fault(data->domain, data->iommu,
 						   fault_address, flags);
 			if (data->fault_handler)
-				data->fault_handler(data->iommu, IOMMU_PAGEFAULT, dte, fault_address, 1);
+				data->fault_handler(data->master, IOMMU_PAGEFAULT, dte, fault_address, 1);
 
 			rockchip_iommu_page_fault_done(data->res_bases[i],
 					               data->dbgname);
@@ -695,17 +695,14 @@ static int rockchip_iommu_enable(struct iommu_drvdata *data, unsigned int pgtabl
 	spin_lock_irqsave(&data->data_lock, flags);
 
 	if (!rockchip_set_iommu_active(data)) {
-		if (WARN_ON(pgtable != data->pgtable)) {
+		if (WARN_ON(pgtable != data->pgtable))
 			ret = -EBUSY;
-			rockchip_set_iommu_inactive(data);
-		} else {
+		else
 			ret = 1;
-		}
 
-		spin_unlock_irqrestore(&data->data_lock, flags);
 		dev_info(data->iommu, "(%s) Already enabled\n", data->dbgname);
 
-		return ret;
+		goto enable_out;
 	}
 
 	for (i = 0; i < data->num_res_mem; i++) {
@@ -713,15 +710,16 @@ static int rockchip_iommu_enable(struct iommu_drvdata *data, unsigned int pgtabl
 		if (!ret) {
 			dev_info(data->iommu, "(%s), %s failed\n",
 				 data->dbgname, __func__);
-			spin_unlock_irqrestore(&data->data_lock, flags);
-			return -EBUSY;
+			ret = -EBUSY;
+			goto enable_out;
 		}
 
 		if (!strstr(data->dbgname, "isp")) {
 			if (!rockchip_iommu_reset(data->res_bases[i],
 			     data->dbgname)) {
-			     	spin_unlock_irqrestore(&data->data_lock, flags);
-				return -ENOENT;
+				rockchip_iommu_disable_stall(data->res_bases[i]);
+				ret = -ENOENT;
+				goto enable_out;
 			}
 		}
 
@@ -738,22 +736,28 @@ static int rockchip_iommu_enable(struct iommu_drvdata *data, unsigned int pgtabl
 
 		ret = rockchip_iommu_enable_paging(data->res_bases[i]);
 		if (!ret) {
-			spin_unlock_irqrestore(&data->data_lock, flags);
 			dev_info(data->iommu, "(%s), %s failed\n",
 				 data->dbgname, __func__);
-			return -EBUSY;
+			rockchip_iommu_disable_stall(data->res_bases[i]);
+			ret = -EBUSY;
+			goto enable_out;
 		}
 
 		rockchip_iommu_disable_stall(data->res_bases[i]);
 	}
 
 	data->pgtable = pgtable;
+	spin_unlock_irqrestore(&data->data_lock, flags);
 
 	dev_dbg(data->iommu,"(%s) Enabled\n", data->dbgname);
 
+	return 0;
+
+enable_out:
+	rockchip_set_iommu_inactive(data);
 	spin_unlock_irqrestore(&data->data_lock, flags);
 
-	return 0;
+	return ret;
 }
 
 int rockchip_iommu_tlb_invalidate_global(struct device *dev)
@@ -994,6 +998,7 @@ static int rockchip_iommu_attach_device(struct iommu_domain *domain, struct devi
 		BUG_ON(!list_empty(&data->node));
 		list_add_tail(&data->node, &priv->clients);
 		data->domain = domain;
+		data->master = dev;
 	}
 
 	spin_unlock_irqrestore(&priv->lock, flags);
@@ -1005,7 +1010,9 @@ static int rockchip_iommu_attach_device(struct iommu_domain *domain, struct devi
 		dev_dbg(dev->archdata.iommu,"%s: IOMMU with pgtable 0x%x already attached\n",
 			__func__, (unsigned int)virt_to_phys(priv->pgtable));
 	} else {
-		if (!(strstr(data->dbgname, "vpu") || strstr(data->dbgname, "hevc")))
+		if (!(strstr(data->dbgname, "vpu") ||
+		      strstr(data->dbgname, "hevc") ||
+		      strstr(data->dbgname, "vdec")))
 			dev_info(dev->archdata.iommu,"%s: Attached new IOMMU with pgtable 0x%x\n",
 				__func__, (unsigned int)virt_to_phys(priv->pgtable));
 	}
@@ -1214,6 +1221,7 @@ static const struct of_device_id iommu_dt_ids[] = {
 	{ .compatible = VPU_IOMMU_COMPATIBLE_NAME},
 	{ .compatible = ISP_IOMMU_COMPATIBLE_NAME},
 	{ .compatible = VOP_IOMMU_COMPATIBLE_NAME},
+	{ .compatible = VDEC_IOMMU_COMPATIBLE_NAME},
 	{ /* end */ }
 };
 

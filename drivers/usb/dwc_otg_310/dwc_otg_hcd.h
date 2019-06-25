@@ -570,6 +570,7 @@ struct dwc_otg_hcd {
 	uint8_t host_setenable;
 	struct timer_list connect_detect_timer;
 	struct delayed_work host_enable_work;
+	struct work_struct phy_rst_work;
 };
 
 /** @name Transaction Execution Functions */
@@ -639,8 +640,6 @@ static inline dwc_otg_qh_t *dwc_otg_hcd_qh_alloc(int atomic_alloc)
 		return (dwc_otg_qh_t *) DWC_ALLOC(sizeof(dwc_otg_qh_t));
 }
 
-extern dwc_otg_qtd_t *dwc_otg_hcd_qtd_create(dwc_otg_hcd_urb_t *urb,
-					     int atomic_alloc);
 extern void dwc_otg_hcd_qtd_init(dwc_otg_qtd_t *qtd, dwc_otg_hcd_urb_t *urb);
 extern int dwc_otg_hcd_qtd_add(dwc_otg_qtd_t *qtd, dwc_otg_hcd_t *dwc_otg_hcd,
 			       dwc_otg_qh_t **qh, int atomic_alloc);

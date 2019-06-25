@@ -12,6 +12,10 @@
 
 struct rockchip_temp;
 
+#define RK3288_TSADC	0
+#define RK322X_TSADC	1
+#define RK1108_TSADC	2
+
 /*
  * struct rockchip_temp_ops - rockchip chip specific ops
  * @read_sensor: reads gpadc output
@@ -21,7 +25,7 @@ struct rockchip_temp;
  * @is_visible: is attribute visible
  */
 struct rockchip_temp_ops {
-	int (*read_sensor)(int);
+	int (*read_sensor)(int, int);
 	int (*irq_handler)(int, struct rockchip_temp *);
 	ssize_t (*show_name)(struct device *,
 			struct device_attribute *, char *);
@@ -70,6 +74,7 @@ struct rockchip_temp {
 	struct work_struct 	auto_ht_irq_work;
 	struct workqueue_struct  *workqueue;
 	struct workqueue_struct  *tsadc_workqueue;
+	int tsadc_type;
 };
 
 int rockchip_hwmon_init(struct rockchip_temp *data);

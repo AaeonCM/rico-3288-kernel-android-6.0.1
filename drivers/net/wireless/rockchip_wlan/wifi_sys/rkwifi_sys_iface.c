@@ -117,6 +117,20 @@ static ssize_t wifi_chip_read(struct class *cls, struct class_attribute *attr, c
 	    printk("Current WiFi chip is ESP8089.\n");
 	}
 
+        if(type == WIFI_RTL8189FS) {
+            count = sprintf(_buf, "%s", "RTL8189FS");
+            printk("Current WiFi chip is RTL8189FS.\n");
+        }
+
+        if(type == WIFI_RTL8188FU) {
+            count = sprintf(_buf, "%s", "RTL8188FU");
+            printk("Current WiFi chip is RTL8188FU.\n");
+        }
+
+        if(type == WIFI_SSV6051) {
+	    count = sprintf(_buf, "%s", "SSV6051");
+            printk("Current WiFi chip is SSV6051.\n");
+	}
     return count;
 }
 
@@ -146,6 +160,8 @@ extern int rockchip_wifi_init_module_rtkwifi(void);
 extern void rockchip_wifi_exit_module_rtkwifi(void);
 extern int rockchip_wifi_init_module_esp8089(void);
 extern void rockchip_wifi_exit_module_esp8089(void);
+extern int rockchip_wifi_init_module_ssv6xxx(void);
+extern void rockchip_wifi_exit_module_ssv6xxx(void);
 #endif
 static struct semaphore driver_sem;
 static int wifi_driver_insmod = 0;

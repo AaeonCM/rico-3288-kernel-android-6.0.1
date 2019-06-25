@@ -216,14 +216,12 @@ struct dw_mci {
 	struct pinctrl_state	*pins_idle;    /* Gpio port */
 	struct pinctrl_state    *pins_udbg;    /* uart_dbg port */
 
-	u32	cid;
 	struct regmap	*grf;
 	u32 *regs_buffer;
 	const struct dw_mci_rst_ops *rst_ops;
 	u32	tune_regsbase;
-	u32	cru_regsbase;
-	u32	cru_reset_offset;
-	struct regmap *cru;
+	struct reset_control *reset;
+	bool power_inverted;
 };
 
 /* DMA ops for Internal/External DMAC interface */

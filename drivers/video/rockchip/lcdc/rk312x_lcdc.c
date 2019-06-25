@@ -635,14 +635,12 @@ static int rk312x_lcdc_mmu_en(struct rk_lcdc_driver *dev_drv)
 		lcdc_msk_reg(lcdc_dev, AXI_BUS_CTRL, mask, val);
 	}
 	/*spin_unlock(&lcdc_dev->reg_lock);*/
-	#if defined(CONFIG_ROCKCHIP_IOMMU)
 	if (dev_drv->iommu_enabled) {
 		if (!lcdc_dev->iommu_status && dev_drv->mmu_dev) {
 			lcdc_dev->iommu_status = 1;
 			rockchip_iovmm_activate(dev_drv->dev);
 		}
 	}
-	#endif
 
 	return 0;
 }
@@ -1128,7 +1126,8 @@ static void rk312x_lcdc_select_bcsh(struct rk_lcdc_driver *dev_drv,
 }
 
 static int rk312x_get_dspbuf_info(struct rk_lcdc_driver *dev_drv, u16 *xact,
-				  u16 *yact, int *format, u32 *dsp_addr)
+				  u16 *yact, int *format, u32 *dsp_addr,
+				  int *ymirror)
 {
 	struct lcdc_device *lcdc_dev = container_of(dev_drv,
 						    struct lcdc_device, driver);
@@ -1151,10 +1150,12 @@ static int rk312x_get_dspbuf_info(struct rk_lcdc_driver *dev_drv, u16 *xact,
 }
 
 static int rk312x_post_dspbuf(struct rk_lcdc_driver *dev_drv, u32 rgb_mst,
-			      int format, u16 xact, u16 yact, u16 xvir)
+			      int format, u16 xact, u16 yact, u16 xvir,
+			      int ymirror)
 {
 	struct lcdc_device *lcdc_dev = container_of(dev_drv,
 						    struct lcdc_device, driver);
+	struct rk_lcdc_win *win = dev_drv->win[0];
 	u32 val, mask;
 
 	mask = m_WIN0_FORMAT;
@@ -1169,6 +1170,8 @@ static int rk312x_post_dspbuf(struct rk_lcdc_driver *dev_drv, u32 rgb_mst,
 	lcdc_writel(lcdc_dev, WIN0_YRGB_MST, rgb_mst);
 
 	lcdc_cfg_done(lcdc_dev);
+	win->state = 1;
+	win->last_state = 1;
 
 	return 0;
 }
@@ -1382,7 +1385,7 @@ static int rk312x_load_screen(struct rk_lcdc_driver *dev_drv, bool initscreen)
 		      v_HASP(screen->mode.hsync_len + left_margin);
 		lcdc_writel(lcdc_dev, DSP_HACT_ST_END, val);
 
-		if (screen->mode.vmode == FB_VMODE_INTERLACED) {
+		if (screen->mode.vmode & FB_VMODE_INTERLACED) {
 			/* First Field Timing */
 			lcdc_writel(lcdc_dev, DSP_VTOTAL_VS_END,
 				    v_VSYNC(screen->mode.vsync_len) |
@@ -1464,8 +1467,6 @@ static int rk312x_load_screen(struct rk_lcdc_driver *dev_drv, bool initscreen)
 	rk312x_lcdc_set_dclk(dev_drv, 1);
 	lcdc_cfg_done(lcdc_dev);
 
-	if (dev_drv->trsm_ops && dev_drv->trsm_ops->enable)
-		dev_drv->trsm_ops->enable();
 	if (screen->init)
 		screen->init();
 
@@ -1483,7 +1484,6 @@ static int rk312x_lcdc_open(struct rk_lcdc_driver *dev_drv, int win_id,
 		rockchip_set_system_status(SYS_STATUS_LCDC0);
 		rk312x_lcdc_pre_init(dev_drv);
 		rk312x_lcdc_clk_enable(lcdc_dev);
-#if defined(CONFIG_ROCKCHIP_IOMMU)
 		if (dev_drv->iommu_enabled) {
 			if (!dev_drv->mmu_dev) {
 				dev_drv->mmu_dev =
@@ -1500,7 +1500,6 @@ static int rk312x_lcdc_open(struct rk_lcdc_driver *dev_drv, int win_id,
 			/*if (dev_drv->mmu_dev)
 				rockchip_iovmm_activate(dev_drv->dev);*/
 		}
-#endif
 		rk312x_lcdc_reg_restore(lcdc_dev);
 		/*if (dev_drv->iommu_enabled)
 			rk312x_lcdc_mmu_en(dev_drv);*/
@@ -1511,6 +1510,8 @@ static int rk312x_lcdc_open(struct rk_lcdc_driver *dev_drv, int win_id,
 			dev_drv->standby = 1;
 			rk312x_load_screen(dev_drv, 1);
 			rk312x_lcdc_standby(dev_drv, false);
+			if (dev_drv->trsm_ops && dev_drv->trsm_ops->enable)
+				dev_drv->trsm_ops->enable();
 		}
 
 		/* set screen lut */
@@ -1528,12 +1529,10 @@ static int rk312x_lcdc_open(struct rk_lcdc_driver *dev_drv, int win_id,
 /*	if ((!open) && (!lcdc_dev->atv_layer_cnt)) {
 		rk312x_lcdc_disable_irq(lcdc_dev);
 		rk312x_lcdc_reg_update(dev_drv);
-#if defined(CONFIG_ROCKCHIP_IOMMU)
 		if (dev_drv->iommu_enabled) {
 			if (dev_drv->mmu_dev)
 				rockchip_iovmm_deactivate(dev_drv->dev);
 		}
-#endif
 		rk312x_lcdc_clk_disable(lcdc_dev);
 		rockchip_clear_system_status(SYS_STATUS_LCDC0);
 	}*/
@@ -1578,7 +1577,7 @@ static int rk312x_lcdc_set_par(struct rk_lcdc_driver *dev_drv, int win_id)
                         win->area[0].ysize = win->area[0].yact;
                     }
 	}
-	if (screen->mode.vmode == FB_VMODE_INTERLACED) {
+	if (screen->mode.vmode & FB_VMODE_INTERLACED) {
 		win->area[0].ysize /= 2;
 		win->area[0].dsp_sty = win->area[0].ypos / 2 +
 				       screen->mode.upper_margin +
@@ -2530,10 +2529,10 @@ static int rk312x_lcdc_dsp_black(struct rk_lcdc_driver *dev_drv, int enable)
 		}
 		spin_unlock(&lcdc_dev->reg_lock);
 
+		rk312x_lcdc_standby(dev_drv, false);
+		msleep(20);
 		if (dev_drv->trsm_ops && dev_drv->trsm_ops->enable)
 			dev_drv->trsm_ops->enable();
-
-		rk312x_lcdc_standby(dev_drv, false);
 
 		msleep(100);
 		/* open the backlight */
@@ -2613,14 +2612,10 @@ static int rk312x_lcdc_parse_dt(struct lcdc_device *lcdc_dev)
 	const struct rk_lcdc_drvdata *lcdc_drvdata;
 	int val;
 
-#if defined(CONFIG_ROCKCHIP_IOMMU)
 	if (of_property_read_u32(np, "rockchip,iommu-enabled", &val))
 		lcdc_dev->driver.iommu_enabled = 0;
 	else
 		lcdc_dev->driver.iommu_enabled = val;
-#else
-	lcdc_dev->driver.iommu_enabled = 0;
-#endif
 
 	if (of_property_read_u32(np, "rockchip,fb-win-map", &val))
 		lcdc_dev->driver.fb_win_map = FB_DEFAULT_ORDER;

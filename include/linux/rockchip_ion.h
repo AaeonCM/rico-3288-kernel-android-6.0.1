@@ -42,6 +42,8 @@ struct ion_phys_data {
 	unsigned long size;
 };
 
+struct ion_client *rockchip_ion_client_create(const char *name);
+
 #define ION_IOC_ROCKCHIP_MAGIC 'R'
 
 /**
@@ -49,5 +51,8 @@ struct ion_phys_data {
  */
 #define ION_IOC_GET_PHYS	_IOWR(ION_IOC_ROCKCHIP_MAGIC, 0, \
 						struct ion_phys_data)
-
+/**
+ * Set memory region secured.
+ */
+#define ION_IOC_SET_SECURED	_IOWR(ION_IOC_ROCKCHIP_MAGIC, 1, bool)
 #endif

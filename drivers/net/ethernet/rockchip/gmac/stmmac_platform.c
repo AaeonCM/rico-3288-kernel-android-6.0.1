@@ -39,13 +39,13 @@
 
 static u64 gmac_dmamask = DMA_BIT_MASK(32);
 
-/*for RK3288 & RK3128*/
+/* for RK3288 & RK3128 */
 #define grf_readl(offset)	readl_relaxed(RK_GRF_VIRT + offset)
 #define grf_writel(v, offset)	\
 	do { writel_relaxed(v, RK_GRF_VIRT + offset); dsb(sy); } while (0)
 
-/*RK3288_GRF_SOC_CON1*/
-/*RK3128_GRF_MAC_CON1*/
+/* RK3288_GRF_SOC_CON1 */
+/* RK3128_GRF_MAC_CON1 */
 #define GMAC_PHY_INTF_SEL_RGMII ((0x01C0 << 16) | (0x0040))
 #define GMAC_PHY_INTF_SEL_RMII  ((0x01C0 << 16) | (0x0100))
 #define GMAC_FLOW_CTRL          ((0x0200 << 16) | (0x0200))
@@ -60,8 +60,8 @@ static u64 gmac_dmamask = DMA_BIT_MASK(32);
 #define GMAC_RMII_MODE          ((0x4000 << 16) | (0x4000))
 #define GMAC_RMII_MODE_CLR      ((0x4000 << 16) | (0x0000))
 
-/*RK3288_GRF_SOC_CON3*/
-/*RK3128_GRF_MAC_CON0*/
+/* RK3288_GRF_SOC_CON3 */
+/* RK3128_GRF_MAC_CON0 */
 #define GMAC_TXCLK_DLY_ENABLE   ((0x4000 << 16) | (0x4000))
 #define GMAC_TXCLK_DLY_DISABLE  ((0x4000 << 16) | (0x0000))
 #define GMAC_RXCLK_DLY_ENABLE   ((0x8000 << 16) | (0x8000))
@@ -69,7 +69,7 @@ static u64 gmac_dmamask = DMA_BIT_MASK(32);
 #define GMAC_CLK_RX_DL_CFG(val) ((0x3F80 << 16) | (val<<7))
 #define GMAC_CLK_TX_DL_CFG(val) ((0x007F << 16) | (val))
 
-/*for RK3368*/
+/* for RK3368 */
 #define HIWORD_UPDATE(val, mask, shift) \
 		((val) << (shift) | (mask) << ((shift) + 16))
 
@@ -79,7 +79,7 @@ static u64 gmac_dmamask = DMA_BIT_MASK(32);
 #define RK3368_GRF_SOC_CON15	0x043c
 #define RK3368_GRF_SOC_CON16	0x0440
 
-/*RK3368_GRF_SOC_CON15*/
+/* RK3368_GRF_SOC_CON15 */
 #define RK3368_GMAC_PHY_INTF_SEL_RGMII	\
 		(GRF_BIT(9) | GRF_CLR_BIT(10) | GRF_CLR_BIT(11))
 #define RK3368_GMAC_PHY_INTF_SEL_RMII	\
@@ -96,13 +96,48 @@ static u64 gmac_dmamask = DMA_BIT_MASK(32);
 #define RK3368_GMAC_RMII_MODE		GRF_BIT(6)
 #define RK3368_GMAC_RMII_MODE_CLR	GRF_CLR_BIT(6)
 
-/*RK3368_GRF_SOC_CON16*/
+/* RK3368_GRF_SOC_CON16 */
 #define RK3368_GMAC_TXCLK_DLY_ENABLE	GRF_BIT(7)
 #define RK3368_GMAC_TXCLK_DLY_DISABLE	GRF_CLR_BIT(7)
 #define RK3368_GMAC_RXCLK_DLY_ENABLE	GRF_BIT(15)
 #define RK3368_GMAC_RXCLK_DLY_DISABLE	GRF_CLR_BIT(15)
 #define RK3368_GMAC_CLK_RX_DL_CFG(val)	HIWORD_UPDATE(val, 0x7F, 8)
 #define RK3368_GMAC_CLK_TX_DL_CFG(val)	HIWORD_UPDATE(val, 0x7F, 0)
+
+/* RK322X_GRF_MAC_CON1 */
+#define RK322X_GMAC_PHY_INTF_SEL_RGMII	\
+		(GRF_BIT(4) | GRF_CLR_BIT(5) | GRF_CLR_BIT(6))
+#define RK322X_GMAC_PHY_INTF_SEL_RMII	\
+		(GRF_CLR_BIT(4) | GRF_CLR_BIT(5) | GRF_BIT(6))
+#define RK322X_GMAC_FLOW_CTRL		GRF_BIT(3)
+#define RK322X_GMAC_FLOW_CTRL_CLR	GRF_CLR_BIT(3)
+#define RK322X_GMAC_SPEED_10M		GRF_CLR_BIT(2)
+#define RK322X_GMAC_SPEED_100M		GRF_BIT(2)
+#define RK322X_GMAC_RMII_CLK_25M	GRF_BIT(7)
+#define RK322X_GMAC_RMII_CLK_2_5M	GRF_CLR_BIT(7)
+#define RK322X_GMAC_CLK_125M		(GRF_CLR_BIT(8) | GRF_CLR_BIT(9))
+#define RK322X_GMAC_CLK_25M		(GRF_BIT(8) | GRF_BIT(9))
+#define RK322X_GMAC_CLK_2_5M		(GRF_CLR_BIT(8) | GRF_BIT(9))
+#define RK322X_GMAC_RMII_MODE		GRF_BIT(10)
+#define RK322X_GMAC_RMII_MODE_CLR	GRF_CLR_BIT(10)
+#define RK322X_GMAC_TXCLK_DLY_ENABLE	GRF_BIT(0)
+#define RK322X_GMAC_TXCLK_DLY_DISABLE	GRF_CLR_BIT(0)
+#define RK322X_GMAC_RXCLK_DLY_ENABLE	GRF_BIT(1)
+#define RK322X_GMAC_RXCLK_DLY_DISABLE	GRF_CLR_BIT(1)
+
+/* RK322X_GRF_MAC_CON0 */
+#define RK322X_GMAC_CLK_RX_DL_CFG(val)	HIWORD_UPDATE(val, 0x7F, 7)
+#define RK322X_GMAC_CLK_TX_DL_CFG(val)	HIWORD_UPDATE(val, 0x7F, 0)
+
+/* RK1108_GRF_GMAC_CON0 */
+#define RK1108_GMAC_PHY_INTF_SEL_RMII	\
+		(GRF_CLR_BIT(4) | GRF_CLR_BIT(5) | GRF_BIT(6))
+#define RK1108_GMAC_FLOW_CTRL		GRF_BIT(3)
+#define RK1108_GMAC_FLOW_CTRL_CLR	GRF_CLR_BIT(3)
+#define RK1108_GMAC_SPEED_10M		GRF_CLR_BIT(2)
+#define RK1108_GMAC_SPEED_100M		GRF_BIT(2)
+#define RK1108_GMAC_RMII_CLK_25M	GRF_BIT(7)
+#define RK1108_GMAC_RMII_CLK_2_5M	GRF_CLR_BIT(7)
 
 static void SET_RGMII(struct bsp_priv *bsp_priv, int type,
 		      int tx_delay, int rx_delay)
@@ -141,6 +176,24 @@ static void SET_RGMII(struct bsp_priv *bsp_priv, int type,
 			     RK3368_GMAC_TXCLK_DLY_ENABLE |
 			     RK3368_GMAC_CLK_RX_DL_CFG(rx_delay) |
 			     RK3368_GMAC_CLK_TX_DL_CFG(tx_delay));
+	} else if (type == RK322X_GMAC) {
+		struct device *dev = &bsp_priv->pdev->dev;
+
+		if (IS_ERR(bsp_priv->grf)) {
+			dev_err(dev, "%s: Missing rockchip,grf property\n",
+				__func__);
+			return;
+		}
+
+		regmap_write(bsp_priv->grf, RK322X_GRF_MAC_CON1,
+			     RK322X_GMAC_PHY_INTF_SEL_RGMII |
+			     RK322X_GMAC_RMII_MODE_CLR |
+			     RK322X_GMAC_RXCLK_DLY_ENABLE |
+			     RK322X_GMAC_TXCLK_DLY_ENABLE);
+
+		regmap_write(bsp_priv->grf, RK322X_GRF_MAC_CON0,
+			     RK322X_GMAC_CLK_RX_DL_CFG(rx_delay) |
+			     RK322X_GMAC_CLK_TX_DL_CFG(tx_delay));
 	}
 }
 
@@ -164,6 +217,32 @@ static void SET_RMII(struct bsp_priv *bsp_priv, int type)
 		regmap_write(bsp_priv->grf, RK3368_GRF_SOC_CON15,
 			     RK3368_GMAC_PHY_INTF_SEL_RMII |
 			     RK3368_GMAC_RMII_MODE);
+	} else if (type == RK322X_GMAC) {
+		struct device *dev = &bsp_priv->pdev->dev;
+
+		if (IS_ERR(bsp_priv->grf)) {
+			dev_err(dev, "%s: Missing rockchip,grf property\n",
+				__func__);
+			return;
+		}
+
+		regmap_write(bsp_priv->grf, RK322X_GRF_MAC_CON1,
+			     RK322X_GMAC_PHY_INTF_SEL_RMII |
+			     RK322X_GMAC_RMII_MODE);
+
+		/* set MAC to RMII mode */
+		regmap_write(bsp_priv->grf, RK322X_GRF_MAC_CON1, GRF_BIT(11));
+	} else if (type == RK1108_GMAC) {
+		struct device *dev = &bsp_priv->pdev->dev;
+
+		if (IS_ERR(bsp_priv->grf)) {
+			dev_err(dev, "%s: Missing rockchip,grf property\n",
+				__func__);
+			return;
+		}
+
+		regmap_write(bsp_priv->grf, RK1108_GRF_GMAC_CON0,
+			     RK1108_GMAC_PHY_INTF_SEL_RMII);
 	}
 }
 
@@ -184,6 +263,17 @@ static void SET_RGMII_10M(struct bsp_priv *bsp_priv, int type)
 
 		regmap_write(bsp_priv->grf, RK3368_GRF_SOC_CON15,
 			     RK3368_GMAC_CLK_2_5M);
+	} else if (type == RK322X_GMAC) {
+		struct device *dev = &bsp_priv->pdev->dev;
+
+		if (IS_ERR(bsp_priv->grf)) {
+			dev_err(dev, "%s: Missing rockchip,grf property\n",
+				__func__);
+			return;
+		}
+
+		regmap_write(bsp_priv->grf, RK322X_GRF_MAC_CON1,
+			     RK322X_GMAC_CLK_2_5M);
 	}
 }
 
@@ -204,6 +294,17 @@ static void SET_RGMII_100M(struct bsp_priv *bsp_priv, int type)
 
 		regmap_write(bsp_priv->grf, RK3368_GRF_SOC_CON15,
 			     RK3368_GMAC_CLK_25M);
+	} else if (type == RK322X_GMAC) {
+		struct device *dev = &bsp_priv->pdev->dev;
+
+		if (IS_ERR(bsp_priv->grf)) {
+			dev_err(dev, "%s: Missing rockchip,grf property\n",
+				__func__);
+			return;
+		}
+
+		regmap_write(bsp_priv->grf, RK322X_GRF_MAC_CON1,
+			     RK322X_GMAC_CLK_25M);
 	}
 }
 
@@ -224,6 +325,17 @@ static void SET_RGMII_1000M(struct bsp_priv *bsp_priv, int type)
 
 		regmap_write(bsp_priv->grf, RK3368_GRF_SOC_CON15,
 			     RK3368_GMAC_CLK_125M);
+	} else if (type == RK322X_GMAC) {
+		struct device *dev = &bsp_priv->pdev->dev;
+
+		if (IS_ERR(bsp_priv->grf)) {
+			dev_err(dev, "%s: Missing rockchip,grf property\n",
+				__func__);
+			return;
+		}
+
+		regmap_write(bsp_priv->grf, RK322X_GRF_MAC_CON1,
+			     RK322X_GMAC_CLK_125M);
 	}
 }
 
@@ -247,6 +359,36 @@ static void SET_RMII_10M(struct bsp_priv *bsp_priv, int type)
 		regmap_write(bsp_priv->grf, RK3368_GRF_SOC_CON15,
 			     RK3368_GMAC_RMII_CLK_2_5M |
 			     RK3368_GMAC_SPEED_10M);
+	} else if (type == RK322X_GMAC) {
+		struct device *dev = &bsp_priv->pdev->dev;
+
+		if (IS_ERR(bsp_priv->grf)) {
+			dev_err(dev, "%s: Missing rockchip,grf property\n",
+				__func__);
+			return;
+		}
+
+		if (bsp_priv->internal_phy) {
+			/* speed LED */
+			regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON1,
+				     GRF_CLR_BIT(8));
+		}
+
+		regmap_write(bsp_priv->grf, RK322X_GRF_MAC_CON1,
+			     RK322X_GMAC_RMII_CLK_2_5M |
+			     RK322X_GMAC_SPEED_10M);
+	} else if (type == RK1108_GMAC) {
+		struct device *dev = &bsp_priv->pdev->dev;
+
+		if (IS_ERR(bsp_priv->grf)) {
+			dev_err(dev, "%s: Missing rockchip,grf property\n",
+				__func__);
+			return;
+		}
+
+		regmap_write(bsp_priv->grf, RK1108_GRF_GMAC_CON0,
+			     RK1108_GMAC_RMII_CLK_2_5M |
+			     RK1108_GMAC_SPEED_10M);
 	}
 }
 
@@ -270,10 +412,40 @@ static void SET_RMII_100M(struct bsp_priv *bsp_priv, int type)
 		regmap_write(bsp_priv->grf, RK3368_GRF_SOC_CON15,
 			     RK3368_GMAC_RMII_CLK_25M |
 			     RK3368_GMAC_SPEED_100M);
+	} else if (type == RK322X_GMAC) {
+		struct device *dev = &bsp_priv->pdev->dev;
+
+		if (IS_ERR(bsp_priv->grf)) {
+			dev_err(dev, "%s: Missing rockchip,grf property\n",
+				__func__);
+			return;
+		}
+
+		if (bsp_priv->internal_phy) {
+			/* speed LED */
+			regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON1,
+				     GRF_BIT(8));
+		}
+
+		regmap_write(bsp_priv->grf, RK322X_GRF_MAC_CON1,
+			     RK322X_GMAC_RMII_CLK_25M |
+			     RK322X_GMAC_SPEED_100M);
+	} else if (type == RK1108_GMAC) {
+		struct device *dev = &bsp_priv->pdev->dev;
+
+		if (IS_ERR(bsp_priv->grf)) {
+			dev_err(dev, "%s: Missing rockchip,grf property\n",
+				__func__);
+			return;
+		}
+
+		regmap_write(bsp_priv->grf, RK1108_GRF_GMAC_CON0,
+			     RK1108_GMAC_RMII_CLK_25M |
+			     RK1108_GMAC_SPEED_100M);
 	}
 }
 
-struct bsp_priv g_bsp_priv;
+static struct bsp_priv g_bsp_priv;
 
 int gmac_clk_init(struct device *device)
 {
@@ -293,45 +465,68 @@ int gmac_clk_init(struct device *device)
 
 	bsp_priv->clk_mac_ref = clk_get(device,"clk_mac_ref");
 	if (IS_ERR(bsp_priv->clk_mac_ref)) {
-		pr_warn("%s: warning: cannot get clk_mac_ref clock\n", __func__);
+		pr_warn("%s: warning: cannot get %s clock\n",
+			__func__, "clk_mac_ref");
 	}
 
 	bsp_priv->clk_mac_refout = clk_get(device,"clk_mac_refout");
-	if (IS_ERR(bsp_priv->clk_mac_refout)) {
+	if (IS_ERR(bsp_priv->clk_mac_refout))
 		pr_warn("%s: warning: cannot get %s clock\n",
-			"clk_mac_refout", __func__);
-	}
+			__func__, "clk_mac_refout");
+
 
 	bsp_priv->aclk_mac = clk_get(device,"aclk_mac");
-	if (IS_ERR(bsp_priv->aclk_mac)) {
+	if (IS_ERR(bsp_priv->aclk_mac))
 		pr_warn("%s: warning: cannot get aclk_mac clock\n", __func__);
-	}
 
 	bsp_priv->pclk_mac = clk_get(device,"pclk_mac");
-	if (IS_ERR(bsp_priv->pclk_mac)) {
+	if (IS_ERR(bsp_priv->pclk_mac))
 		pr_warn("%s: warning: cannot get pclk_mac clock\n", __func__);
-	}
 
 	bsp_priv->clk_mac_pll = clk_get(device,"clk_mac_pll");
-	if (IS_ERR(bsp_priv->clk_mac_pll)) {
-		pr_warn("%s: warning: cannot get clk_mac_pll clock\n", __func__);
-	}
+	if (IS_ERR(bsp_priv->clk_mac_pll))
+		pr_warn("%s: warning: cannot get %s clock\n",
+			__func__, "clk_mac_pll");
 
 	bsp_priv->gmac_clkin = clk_get(device,"gmac_clkin");
-	if (IS_ERR(bsp_priv->gmac_clkin)) {
+	if (IS_ERR(bsp_priv->gmac_clkin))
 		pr_warn("%s: warning: cannot get gmac_clkin clock\n", __func__);
-	}
 
 	bsp_priv->clk_mac = clk_get(device, "clk_mac");
-	if (IS_ERR(bsp_priv->clk_mac)) {
+	if (IS_ERR(bsp_priv->clk_mac))
 		pr_warn("%s: warning: cannot get clk_mac clock\n", __func__);
-	}
+
+	bsp_priv->mac_clkin = clk_get(device, "mac_clkin");
+	if (IS_ERR(bsp_priv->mac_clkin))
+		pr_warn("%s: warning: cannot get mac_clkin clock\n", __func__);
+
+	bsp_priv->phy_50m_out = clk_get(device, "phy_50m_out");
+	if (IS_ERR(bsp_priv->phy_50m_out))
+		pr_warn("%s: warning: cannot get %s clock\n",
+			__func__, "phy_50m_out");
+
+	bsp_priv->clk_macphy = clk_get(device, "clk_macphy");
+	if (IS_ERR(bsp_priv->clk_macphy))
+		pr_warn("%s: warning: cannot get %s clock\n",
+			__func__, "clk_macphy");
 
 	if (bsp_priv->clock_input) {
 		if (bsp_priv->phy_iface == PHY_INTERFACE_MODE_RMII) {
 			clk_set_rate(bsp_priv->gmac_clkin, 50000000);
 		}
-		clk_set_parent(bsp_priv->clk_mac, bsp_priv->gmac_clkin);
+
+		if (bsp_priv->chip == RK322X_GMAC) {
+			clk_set_parent(bsp_priv->clk_mac, bsp_priv->mac_clkin);
+			if (bsp_priv->internal_phy) {
+				clk_set_parent(bsp_priv->mac_clkin,
+					       bsp_priv->phy_50m_out);
+			} else {
+				clk_set_parent(bsp_priv->mac_clkin,
+					       bsp_priv->gmac_clkin);
+			}
+		} else {
+			clk_set_parent(bsp_priv->clk_mac, bsp_priv->gmac_clkin);
+		}
 	} else {
 		if (bsp_priv->phy_iface == PHY_INTERFACE_MODE_RMII) {
 			clk_set_rate(bsp_priv->clk_mac_pll, 50000000);
@@ -357,7 +552,8 @@ static int gmac_clk_enable(bool enable) {
 					clk_prepare_enable(
 						bsp_priv->clk_mac_ref);
 
-				if (!IS_ERR(bsp_priv->clk_mac_refout))
+				if ((!IS_ERR(bsp_priv->clk_mac_refout)) &&
+				    (!bsp_priv->internal_phy))
 					clk_prepare_enable(
 						bsp_priv->clk_mac_refout);
 			}
@@ -388,7 +584,8 @@ static int gmac_clk_enable(bool enable) {
 					clk_disable_unprepare(
 						bsp_priv->clk_mac_ref);
 
-				if (!IS_ERR(bsp_priv->clk_mac_refout))
+				if ((!IS_ERR(bsp_priv->clk_mac_refout)) &&
+				    (!bsp_priv->internal_phy))
 					clk_disable_unprepare(
 						bsp_priv->clk_mac_refout);
 			}
@@ -461,13 +658,13 @@ static int power_on_by_pmu(bool enable) {
 static int power_on_by_gpio(bool enable) {
 	struct bsp_priv * bsp_priv = &g_bsp_priv;
 	if (enable) {
-		/*power on*/
+		/* power on */
 		if (gpio_is_valid(bsp_priv->power_io)) {
 			gpio_direction_output(bsp_priv->power_io,
 					      bsp_priv->power_io_level);
 		}
 	} else {
-		/*power off*/
+		/* power off */
 		if (gpio_is_valid(bsp_priv->power_io)) {
 			gpio_direction_output(bsp_priv->power_io,
 					      !bsp_priv->power_io_level);
@@ -482,7 +679,80 @@ static int phy_power_on(bool enable)
 	struct bsp_priv *bsp_priv = &g_bsp_priv;
 	int ret = -1;
 
-	printk("%s: enable = %d \n", __func__, enable);
+	pr_info("%s: enable = %d\n", __func__, enable);
+
+	if (bsp_priv->internal_phy) {
+		pr_info("use internal PHY\n");
+
+		if (gpio_is_valid(bsp_priv->link_io)) {
+			/* link LED off */
+			gpio_direction_output(g_bsp_priv.link_io,
+					      !g_bsp_priv.link_io_level);
+		}
+
+		/* S29_12 set to 0 */
+		/* S29_8 & S29_9 set to 0 */
+		/* G5_7 set to 0 */
+		clk_set_rate(bsp_priv->clk_macphy, 50000000);
+		clk_prepare_enable(bsp_priv->clk_macphy);
+
+		if (bsp_priv->clock_input) {
+			/* S29_10 set to 1, use_iner_phy_50m */
+			clk_set_parent(bsp_priv->mac_clkin,
+				       bsp_priv->phy_50m_out);
+		} else {
+			/* S29_10 set to 0, use gmac_clkin */
+			clk_set_parent(bsp_priv->mac_clkin,
+				       bsp_priv->gmac_clkin);
+		}
+
+		/* S29_11 set to 0, NOT use_iner_phy_txrx */
+		/* regmap_write(bsp_priv->cru, 0xb8, GRF_CLR_BIT(11)); */
+
+		/* grf_con_iomux_gmac set to 1(RGMII) */
+		regmap_write(bsp_priv->grf, 0x50, GRF_BIT(15));
+
+		/* macphy_cfg_clk_freq set to 50MHz */
+		regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON0,
+			     GRF_BIT(14));
+
+		/* regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON0,
+		*	     GRF_BIT(15));
+		*/
+
+		/* macphy_cfg_mii_mode, set to 01*/
+		regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON0,
+			     GRF_BIT(6) | GRF_CLR_BIT(7));
+
+		/* phy_addr set to 0x1*/
+		regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON1, GRF_BIT(3));
+
+		/* phy_id set to 0x351234*/
+		regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON2,
+			     HIWORD_UPDATE(0x1234, 0xffff, 0));
+		regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON3,
+			     HIWORD_UPDATE(0x35, 0x3f, 0));
+
+		/* disable macphy */
+		regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON0,
+			     GRF_CLR_BIT(0));
+		/* reset macphy */
+		regmap_write(bsp_priv->cru, 0x11c, GRF_BIT(15));
+		mdelay(1);
+		regmap_write(bsp_priv->cru, 0x11c, GRF_CLR_BIT(15));
+		mdelay(1);
+		/* enable macphy */
+		regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON0, GRF_BIT(0));
+	} else {
+		if (bsp_priv->chip == RK322X_GMAC) {
+			/* disable macphy */
+			regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON0,
+				     GRF_CLR_BIT(0));
+			/* G5_7 set to 1 */
+			clk_prepare_enable(bsp_priv->clk_macphy);
+			clk_disable_unprepare(bsp_priv->clk_macphy);
+		}
+	}
 
 	if (bsp_priv->power_ctrl_by_pmu) {
 		ret = power_on_by_pmu(enable);
@@ -491,7 +761,7 @@ static int phy_power_on(bool enable)
 	}
 
 	if (enable) {
-		//reset
+		/* reset */
 		if (gpio_is_valid(bsp_priv->reset_io)) {
 			gpio_direction_output(bsp_priv->reset_io,
 					      bsp_priv->reset_io_level);
@@ -499,13 +769,25 @@ static int phy_power_on(bool enable)
 			gpio_direction_output(bsp_priv->reset_io,
 					      !bsp_priv->reset_io_level);
 		}
+		if (bsp_priv->chip == RK322X_GMAC) {
+			/* enable macphy */
+			regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON0,
+				     GRF_BIT(0));
+		}
+
 		mdelay(30);
 
 	} else {
-		//pull down reset
+		/* pull down reset */
 		if (gpio_is_valid(bsp_priv->reset_io)) {
 			gpio_direction_output(bsp_priv->reset_io,
 					      bsp_priv->reset_io_level);
+		}
+
+		if (bsp_priv->chip == RK322X_GMAC) {
+			/* disable macphy */
+			regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON0,
+				     GRF_CLR_BIT(0));
 		}
 	}
 
@@ -520,7 +802,14 @@ int stmmc_pltfr_init(struct platform_device *pdev) {
 
 	pr_info("%s:\n", __func__);
 	phy_iface = bsp_priv->phy_iface;
-//power
+
+	if (bsp_priv->chip == RK322X_GMAC) {
+		/* disable macphy */
+		regmap_write(bsp_priv->grf, RK322X_GRF_MACPHY_CON0,
+			     GRF_CLR_BIT(0));
+	}
+
+/* power */
 	if (!gpio_is_valid(bsp_priv->power_io)) {
 		pr_err("%s: ERROR: Get power-gpio failed.\n", __func__);
 	} else {
@@ -544,7 +833,7 @@ int stmmc_pltfr_init(struct platform_device *pdev) {
 	if (bsp_priv->phyirq_io > 0) {
 		err = gpio_request(bsp_priv->phyirq_io, "gmac_phyirq");
 		if (err < 0) {
-			printk("gmac_phyirq: failed to request GPIO %d,"
+			pr_err("gmac_phyirq: failed to request GPIO %d,"
 				" error %d\n", bsp_priv->phyirq_io, err);
 		} else {
 			err = gpio_direction_input(bsp_priv->phyirq_io);
@@ -572,7 +861,33 @@ int stmmc_pltfr_init(struct platform_device *pdev) {
 		}
 	}
 
-/*rmii or rgmii*/
+	if (!gpio_is_valid(bsp_priv->link_io)) {
+		pr_err("%s: ERROR: Get link-gpio failed.\n", __func__);
+	} else {
+		err = gpio_request(bsp_priv->link_io, "phy_link");
+		if (err) {
+			pr_err("%s: ERROR: Request pin %s failed.\n",
+			       "phy_link", __func__);
+		}
+	}
+
+	if ((g_bsp_priv.internal_phy) && gpio_is_valid(g_bsp_priv.link_io)) {
+		/* link LED off */
+		gpio_direction_output(g_bsp_priv.link_io,
+				      !g_bsp_priv.link_io_level);
+	}
+
+	if (!gpio_is_valid(bsp_priv->led_io)) {
+		pr_err("%s: ERROR: Get led-gpio failed.\n", __func__);
+	} else {
+		err = gpio_request(bsp_priv->led_io, "phy_led");
+		if (err) {
+			pr_err("%s: ERROR: Request pin %s failed.\n",
+			       "phy_led", __func__);
+		}
+	}
+
+/* rmii or rgmii */
 	if (phy_iface == PHY_INTERFACE_MODE_RGMII) {
 		pr_info("%s: init for RGMII\n", __func__);
 		SET_RGMII(bsp_priv, bsp_priv->chip,
@@ -641,6 +956,8 @@ void stmmc_pltfr_fix_mac_speed(void *priv, unsigned int speed){
 }
 
 
+static const struct of_device_id stmmac_dt_ids[];
+
 #ifdef CONFIG_OF
 static int stmmac_probe_config_dt(struct platform_device *pdev,
 				  struct plat_stmmacenet_data *plat,
@@ -651,6 +968,11 @@ static int stmmac_probe_config_dt(struct platform_device *pdev,
 	int ret;
 	const char * strings = NULL;
 	int value;
+	const struct of_device_id *match;
+
+	match = of_match_device(stmmac_dt_ids, &pdev->dev);
+	if (!match)
+		return -EINVAL;
 
 	if (!np)
 		return -ENODEV;
@@ -709,6 +1031,20 @@ static int stmmac_probe_config_dt(struct platform_device *pdev,
 		g_bsp_priv.rx_delay = value;
 	}
 
+	ret = of_property_read_string(np, "phy-type", &strings);
+	if (ret) {
+		pr_err("%s: Can not read property: phy-type.\n", __func__);
+		g_bsp_priv.internal_phy = false;
+	} else {
+		pr_info("%s: internal PHY/external PHY? (%s).\n",
+			__func__, strings);
+		if (!strcmp(strings, "internal"))
+			g_bsp_priv.internal_phy = true;
+		else
+			g_bsp_priv.internal_phy = false;
+	}
+
+	g_bsp_priv.cru = syscon_regmap_lookup_by_phandle(np, "rockchip,cru");
 	g_bsp_priv.grf = syscon_regmap_lookup_by_phandle(np, "rockchip,grf");
 	g_bsp_priv.pdev = pdev;
 
@@ -716,12 +1052,18 @@ static int stmmac_probe_config_dt(struct platform_device *pdev,
 			of_get_named_gpio_flags(np, "phyirq-gpio", 0, &flags);
 	g_bsp_priv.phyirq_io_level = (flags == GPIO_ACTIVE_HIGH) ? 1 : 0;
 
-	g_bsp_priv.reset_io = 
+	g_bsp_priv.reset_io =
 			of_get_named_gpio_flags(np, "reset-gpio", 0, &flags);
 	g_bsp_priv.reset_io_level = (flags == GPIO_ACTIVE_HIGH) ? 1 : 0;
-	g_bsp_priv.power_io = 
+	g_bsp_priv.power_io =
 			of_get_named_gpio_flags(np, "power-gpio", 0, &flags);
 	g_bsp_priv.power_io_level = (flags == GPIO_ACTIVE_HIGH) ? 1 : 0;
+	g_bsp_priv.link_io =
+			of_get_named_gpio_flags(np, "link-gpio", 0, &flags);
+	g_bsp_priv.link_io_level = (flags == GPIO_ACTIVE_HIGH) ? 1 : 0;
+	g_bsp_priv.led_io =
+			of_get_named_gpio_flags(np, "led-gpio", 0, &flags);
+	g_bsp_priv.led_io_level = (flags == GPIO_ACTIVE_HIGH) ? 1 : 0;
 
 	g_bsp_priv.phy_iface = plat->interface;
 	g_bsp_priv.phy_power_on = phy_power_on;
@@ -736,23 +1078,15 @@ static int stmmac_probe_config_dt(struct platform_device *pdev,
 	 */
 	if (of_device_is_compatible(np, "rockchip,rk3288-gmac") ||
 	    of_device_is_compatible(np, "rockchip,rk312x-gmac") ||
-	    of_device_is_compatible(np, "rockchip,rk3368-gmac")) {
+	    of_device_is_compatible(np, "rockchip,rk3368-gmac") ||
+	    of_device_is_compatible(np, "rockchip,rk322x-gmac") ||
+	    of_device_is_compatible(np, "rockchip,rk1108-gmac")) {
 		plat->has_gmac = 1;
 		plat->pmt = 1;
 	}
 
-	if (of_device_is_compatible(np, "rockchip,rk3288-gmac")) {
-		g_bsp_priv.chip = RK3288_GMAC;
-		pr_info("%s: is rockchip,rk3288-gmac\n", __func__);
-	} else if (of_device_is_compatible(np, "rockchip,rk312x-gmac")) {
-		g_bsp_priv.chip = RK312X_GMAC;
-		pr_info("%s: is rockchip,rk312x-gmac\n", __func__);
-	} else if (of_device_is_compatible(np, "rockchip,rk3368-gmac")) {
-		g_bsp_priv.chip = RK3368_GMAC;
-		pr_info("%s: is rockchip,rk3368-gmac\n", __func__);
-	} else {
-		pr_info("%s: unknown platform\n", __func__);
-	}
+
+	g_bsp_priv.chip = (unsigned long)match->data;
 
 	return 0;
 }
@@ -811,7 +1145,7 @@ static int stmmac_pltfr_probe(struct platform_device *pdev)
 		plat_dat = pdev->dev.platform_data;
 	}
 
-	/* Custom initialisation (if needed)*/
+	/* Custom initialisation (if needed) */
 	if (plat_dat->init) {
 		ret = plat_dat->init(pdev);
 		if (unlikely(ret))
@@ -935,9 +1269,21 @@ static const struct dev_pm_ops stmmac_pltfr_pm_ops;
 #endif /* CONFIG_PM */
 
 static const struct of_device_id stmmac_dt_ids[] = {
-	{ .compatible = "rockchip,rk3288-gmac"},
-	{ .compatible = "rockchip,rk312x-gmac"},
-	{ .compatible = "rockchip,rk3368-gmac"},
+	{ .compatible = "rockchip,rk3288-gmac",
+	  .data = (void *) RK3288_GMAC
+	},
+	{ .compatible = "rockchip,rk312x-gmac",
+	  .data = (void *) RK312X_GMAC
+	},
+	{ .compatible = "rockchip,rk3368-gmac",
+	  .data = (void *) RK3368_GMAC
+	},
+	{ .compatible = "rockchip,rk322x-gmac",
+	  .data = (void *) RK322X_GMAC
+	},
+	{ .compatible = "rockchip,rk1108-gmac",
+	  .data = (void *) RK1108_GMAC
+	},
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, stmmac_dt_ids);

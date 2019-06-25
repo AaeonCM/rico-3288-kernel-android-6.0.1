@@ -12,15 +12,29 @@
 #include <linux/platform_device.h>
 #include <linux/rockchip/cpu.h>
 #include <linux/rockchip/iomap.h>
+#ifdef CONFIG_ARM
+#include <linux/rockchip/psci.h>
+#endif
 #include <asm/compiler.h>
 #include <asm/psci.h>
 #include <asm/system_info.h>
 #include "efuse.h"
 
 #ifdef CONFIG_ARM
+#ifdef CONFIG_ARM_TRUSTZONE
+#define efuse_readl(offset) \
+	rockchip_secure_reg_read(RK3288_EFUSE_PHYS + offset)
+#define efuse_writel(val, offset) \
+	rockchip_secure_reg_write(RK3288_EFUSE_PHYS + offset, val)
+#else
 #define efuse_readl(offset) readl_relaxed(RK_EFUSE_VIRT + offset)
 #define efuse_writel(val, offset) writel_relaxed(val, RK_EFUSE_VIRT + offset)
 #endif
+#endif
+
+#define FRAC_BITS 10
+#define int_to_frac(x) ((x) << FRAC_BITS)
+#define frac_to_int(x) ((x) >> FRAC_BITS)
 
 static u8 efuse_buf[32] = {};
 
@@ -32,6 +46,59 @@ struct rockchip_efuse {
 };
 
 static struct rockchip_efuse efuse;
+
+struct lkg_conversion_table {
+	int temp;
+	int conv;
+};
+
+/*
+ * temp = temp*10
+ * conv = exp(-ln(1.2) / 5 * (T - 23)) *100
+ */
+static const struct lkg_conversion_table conv_table[] = {
+	{200, 111},
+	{205, 109},
+	{210, 107},
+	{215, 105},
+	{220, 103},
+	{225, 101},
+	{230, 100},
+	{235, 98},
+	{240, 96},
+	{245, 94},
+	{250, 92},
+	{255, 91},
+	{260, 89},
+	{265, 88},
+	{270, 86},
+	{275, 84},
+	{280, 83},
+	{285, 81},
+	{290, 80},
+	{295, 78},
+	{300, 77},
+	{305, 76},
+	{310, 74},
+	{315, 73},
+	{320, 72},
+	{325, 70},
+	{330, 69},
+	{335, 68},
+	{340, 66},
+	{345, 65},
+	{350, 64},
+	{355, 63},
+	{360, 62},
+	{365, 61},
+	{370, 60},
+	{375, 58},
+	{380, 57},
+	{385, 56},
+	{390, 55},
+	{395, 54},
+	{400, 53},
+};
 
 #ifdef CONFIG_ARM64
 /****************************secure reg access****************************/
@@ -284,6 +351,11 @@ int rockchip_get_leakage(int ch)
 	return 0;
 }
 
+int rockchip_get_cvbs_adjust(void)
+{
+	return efuse_buf[29] >> 3;
+}
+
 int rockchip_efuse_get_temp_adjust(int ch)
 {
 	int temp;
@@ -296,13 +368,113 @@ int rockchip_efuse_get_temp_adjust(int ch)
 	return temp;
 }
 
+/**
+ * mul_frac() - multiply two fixed-point numbers
+ * @x:	first multiplicand
+ * @y:	second multiplicand
+ *
+ * Return: the result of multiplying two fixed-point numbers.  The
+ * result is also a fixed-point number.
+ */
+static inline s64 mul_frac(s64 x, s64 y)
+{
+	return (x * y) >> FRAC_BITS;
+}
+
+static int get_ft_environment_temp(void)
+{
+	int temp_efuse;
+	int temp_ft;
+
+	/*
+	 * the temp is change from 20c to 40c in ft,
+	 * in order to improve the precision, we do a conversion.
+	 * Ft write temp : temp_efuse = (temp_ft - 20) / (40 - 20) * 63
+	 * We conversion temp : temp_ft = (temp_efuse / 63) * (40 - 20) + 20
+	 * Reserves a decimal point : temp_ft = temp_ft * 10
+	 */
+	temp_efuse = (int)((efuse_buf[30] & 0x7e) >> 1);
+	temp_ft =
+		mul_frac((int_to_frac(temp_efuse) / 63 * 20 + int_to_frac(20)),
+			 int_to_frac(10));
+
+	return frac_to_int(temp_ft);
+}
+
+static int temp_to_conversion_rate(int temp)
+{
+	int high, low, mid;
+
+	low = 0;
+	high = ARRAY_SIZE(conv_table) - 1;
+	mid = (high + low) / 2;
+
+	/* No temp available, return max conversion_rate */
+	if (temp < conv_table[low].temp || temp > conv_table[high].temp)
+		return 100;
+
+	while (low <= high) {
+		if (temp <= conv_table[mid].temp &&
+		    temp > conv_table[mid - 1].temp) {
+			return conv_table[mid - 1].conv +
+			    (conv_table[mid].conv - conv_table[mid - 1].conv) *
+				(temp - conv_table[mid - 1].temp) /
+			    (conv_table[mid].temp - conv_table[mid - 1].temp);
+		} else if (temp > conv_table[mid].temp) {
+			low = mid + 1;
+		} else {
+			high = mid - 1;
+		}
+		mid = (low + high) / 2;
+	}
+
+	return 100;
+}
+
+static int rk3368_get_leakage(int ch)
+{
+	int temp_ft;
+	int leakage_efuse;
+	int leakage;
+	int conversion;
+
+	if ((ch < 0) || (ch > 2))
+		return 0;
+
+	leakage_efuse = rk3288_get_leakage(ch);
+	if (!leakage_efuse || (leakage_efuse == 0xff))
+		return 0;
+
+	/*
+	 * because the temp is variational in tf,
+	 * and the leakage we need is under 23c, so we convert it.
+	 * leakage(23) = leakage_efuse *  exp(-ln(1.2) / 5 * (temp_ft - 23))
+	 * leakage(23) = leakage_efuse * lkg_table->conversion / 100
+	 */
+	temp_ft = get_ft_environment_temp();
+	conversion = temp_to_conversion_rate(temp_ft);
+	leakage = leakage_efuse * conversion / 100;
+
+	/*
+	 * if ft write leakage use 1.35v, need convert to 1v.
+	 * leakage(1v) = leakage(1.35v) / 4
+	 */
+	if ((efuse_buf[26] & 0x80) == 0x80)
+		leakage = leakage / 4;
+
+	return leakage;
+}
+
 static void __init rk3288_efuse_init(void)
 {
 	int ret;
 
 	ret = rk3288_efuse_readregs(0, 32, efuse_buf);
 	if (ret == 32) {
-		efuse.get_leakage = rk3288_get_leakage;
+		if (efuse_buf[2] == 0x33 && efuse_buf[3] == 0x86)
+			efuse.get_leakage = rk3368_get_leakage;
+		else
+			efuse.get_leakage = rk3288_get_leakage;
 		efuse.efuse_version = rk3288_get_efuse_version();
 		efuse.process_version = rk3288_get_process_version();
 		rockchip_set_cpu_version((efuse_buf[6] >> 4) & 3);
@@ -316,7 +488,7 @@ void __init rockchip_efuse_init(void)
 {
 	int ret;
 
-	if (cpu_is_rk3288()) {
+	if (cpu_is_rk3288() || cpu_is_rk322x()) {
 		rk3288_efuse_init();
 	} else if (cpu_is_rk312x()) {
 		ret = rk312x_efuse_readregs(0, 32, efuse_buf);

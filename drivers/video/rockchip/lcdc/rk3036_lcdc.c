@@ -626,7 +626,7 @@ static int rk3036_load_screen(struct rk_lcdc_driver *dev_drv, bool initscreen)
 		    v_HASP(screen->mode.hsync_len + left_margin);
 		lcdc_writel(lcdc_dev, DSP_HACT_ST_END, val);
 
-		if (screen->mode.vmode == FB_VMODE_INTERLACED) {
+		if (screen->mode.vmode & FB_VMODE_INTERLACED) {
 			/*First Field Timing*/
 			lcdc_writel(lcdc_dev, DSP_VTOTAL_VS_END,
 				    v_VSYNC(screen->mode.vsync_len) |
@@ -728,7 +728,6 @@ static int rk3036_lcdc_open(struct rk_lcdc_driver *dev_drv, int win_id,
 	if ((open) && (!lcdc_dev->atv_layer_cnt)) {
 		rk3036_lcdc_pre_init(dev_drv);
 		rk3036_lcdc_clk_enable(lcdc_dev);
-	#if defined(CONFIG_ROCKCHIP_IOMMU)
 		if (dev_drv->iommu_enabled) {
 			if (!dev_drv->mmu_dev) {
 				dev_drv->mmu_dev =
@@ -745,7 +744,6 @@ static int rk3036_lcdc_open(struct rk_lcdc_driver *dev_drv, int win_id,
 				}
 			}
 		}
-	#endif
 		rk3036_lcdc_reg_restore(lcdc_dev);
 		/*if (dev_drv->iommu_enabled)
 			rk3036_lcdc_mmu_en(dev_drv);*/
@@ -767,12 +765,10 @@ static int rk3036_lcdc_open(struct rk_lcdc_driver *dev_drv, int win_id,
 	if ((!open) && (!lcdc_dev->atv_layer_cnt)) {
 		rk3036_lcdc_disable_irq(lcdc_dev);
 		rk3036_lcdc_reg_update(dev_drv);
-		#if defined(CONFIG_ROCKCHIP_IOMMU)
 		if (dev_drv->iommu_enabled) {
 			if (dev_drv->mmu_dev)
 				rockchip_iovmm_deactivate(dev_drv->dev);
 		}
-		#endif
 		rk3036_lcdc_clk_disable(lcdc_dev);
 	}
 */
@@ -821,7 +817,7 @@ static int rk3036_lcdc_set_par(struct rk_lcdc_driver *dev_drv, int win_id)
 
 	win->area[0].dsp_stx = win->post_cfg.xpos + screen->mode.left_margin +
 				screen->mode.hsync_len;
-	if (screen->mode.vmode == FB_VMODE_INTERLACED) {
+	if (screen->mode.vmode & FB_VMODE_INTERLACED) {
 		win->post_cfg.ysize /= 2;
 		win->area[0].dsp_sty = win->post_cfg.ypos/2 +
 					screen->mode.upper_margin +
@@ -1156,7 +1152,6 @@ static int rk3036_lcdc_cfg_done(struct rk_lcdc_driver *dev_drv)
 
 	spin_lock(&lcdc_dev->reg_lock);
 	if (lcdc_dev->clk_on) {
-		#if defined(CONFIG_ROCKCHIP_IOMMU)
 		if (dev_drv->iommu_enabled) {
 			if (!lcdc_dev->iommu_status && dev_drv->mmu_dev) {
 				lcdc_dev->iommu_status = 1;
@@ -1174,7 +1169,6 @@ static int rk3036_lcdc_cfg_done(struct rk_lcdc_driver *dev_drv)
 				rk3036_lcdc_mmu_en(dev_drv);
 			}
 		}
-		#endif
 		lcdc_msk_reg(lcdc_dev, SYS_CTRL, m_LCDC_STANDBY,
 			     v_LCDC_STANDBY(lcdc_dev->standby));
 		for (i = 0; i < ARRAY_SIZE(lcdc_win); i++) {
@@ -1551,14 +1545,10 @@ static int rk3036_lcdc_parse_dt(struct lcdc_device *lcdc_dev)
 	struct device_node *np = lcdc_dev->dev->of_node;
 	int val;
 
-#if defined(CONFIG_ROCKCHIP_IOMMU)
 	if (of_property_read_u32(np, "rockchip,iommu-enabled", &val))
 		lcdc_dev->driver.iommu_enabled = 0;
 	else
 		lcdc_dev->driver.iommu_enabled = val;
-#else
-	lcdc_dev->driver.iommu_enabled = 0;
-#endif
 	if (of_property_read_u32(np, "rockchip,fb-win-map", &val))
 		lcdc_dev->driver.fb_win_map = FB_DEFAULT_ORDER;
 	else

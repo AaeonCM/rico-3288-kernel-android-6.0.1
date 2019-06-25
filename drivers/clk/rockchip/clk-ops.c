@@ -605,20 +605,28 @@ static long clk_3288_dclk_lcdc0_determine_rate(struct clk_hw *hw, unsigned long 
 {
 	struct clk *gpll = clk_get(NULL, "clk_gpll");
 	struct clk *cpll = clk_get(NULL, "clk_cpll");
+	struct clk *dclk_lcdc1 = clk_get(NULL, "dclk_lcdc1");
 	unsigned long best, div, prate, gpll_rate;
 
 	gpll_rate = __clk_get_rate(gpll);
 
-	if ((rate <= (297*MHZ)) && (gpll_rate%rate == 0)) {
+	if ((rate <= (594 * MHZ)) && (gpll_rate % rate == 0)) {
 		*best_parent_p = gpll;
 		best = rate;
 		*best_parent_rate = gpll_rate;
 	} else {
-		*best_parent_p = cpll;
-		div = RK3288_LIMIT_PLL_VIO0/rate;
-		prate = div * rate;
-		*best_parent_rate = clk_round_rate(cpll, prate);
-		best = (*best_parent_rate)/div;	
+		if (clk_get_parent(dclk_lcdc1) == cpll) {
+			*best_parent_p = cpll;
+			*best_parent_rate = __clk_get_rate(cpll);
+			div = *best_parent_rate / rate;
+			best = (*best_parent_rate) / div;
+		} else {
+			*best_parent_p = cpll;
+			div = RK3288_LIMIT_PLL_VIO0/rate;
+			prate = div * rate;
+			*best_parent_rate = clk_round_rate(cpll, prate);
+			best = (*best_parent_rate) / div;
+		}
 	}
 
 	return best;
@@ -646,7 +654,7 @@ static int clk_3288_dclk_lcdc0_set_rate(struct clk_hw *hw, unsigned long rate,
 	if (parent_rate	== __clk_get_rate(gpll)) {
 		parent = clk_get(NULL, "clk_gpll");
 		clk_set_parent(aclk_vio0, gpll);
-		clk_set_rate(aclk_vio0, 300*MHZ);
+		clk_set_rate(aclk_vio0, __clk_get_rate(gpll));
 	} else {
 		parent = clk_get(NULL, "clk_cpll");
 		clk_set_parent(aclk_vio0, cpll);
@@ -655,7 +663,7 @@ static int clk_3288_dclk_lcdc0_set_rate(struct clk_hw *hw, unsigned long rate,
 	clk_set_rate(hclk_vio, 100*MHZ);
 
 	/* make aclk_isp and hclk_isp share a same pll in rk3288_eco */
-	if (rockchip_get_cpu_version() > 0) {
+	if ((rockchip_get_cpu_version() > 0) && (!soc_is_rk3288w())) {
 		aclk_vio1 = clk_get(NULL, "aclk_vio1");
 		clk_set_parent(aclk_vio1, parent);
 		clk_set_rate(aclk_vio1, __clk_get_rate(parent));
@@ -679,20 +687,28 @@ static long clk_3288_dclk_lcdc1_determine_rate(struct clk_hw *hw, unsigned long 
 {
 	struct clk *gpll = clk_get(NULL, "clk_gpll");
 	struct clk *cpll = clk_get(NULL, "clk_cpll");
+	struct clk *dclk_lcdc0 = clk_get(NULL, "dclk_lcdc0");
 	unsigned long best, div, prate, gpll_rate;
 
 	gpll_rate = __clk_get_rate(gpll);
 
-	if ((rate <= (297*MHZ)) && ((gpll_rate)%rate == 0)) {
+	if ((rate <= (594 * MHZ)) && ((gpll_rate) % rate == 0)) {
 		*best_parent_p = gpll;
 		best = rate;
 		*best_parent_rate = gpll_rate;
 	} else {
-		*best_parent_p = cpll;
-		div = RK3288_LIMIT_PLL_VIO1/rate;
-		prate = div * rate;
-		*best_parent_rate = clk_round_rate(cpll, prate);
-		best = (*best_parent_rate)/div;	
+		if (clk_get_parent(dclk_lcdc0) == cpll) {
+			*best_parent_p = cpll;
+			*best_parent_rate = __clk_get_rate(cpll);
+			div = *best_parent_rate / rate;
+			best = (*best_parent_rate) / div;
+		} else {
+			*best_parent_p = cpll;
+			div = RK3288_LIMIT_PLL_VIO1 / rate;
+			prate = div * rate;
+			*best_parent_rate = clk_round_rate(cpll, prate);
+			best = (*best_parent_rate) / div;
+		}
 	}
 
 	return best;
@@ -710,20 +726,14 @@ static int clk_3288_dclk_lcdc1_set_rate(struct clk_hw *hw, unsigned long rate,
 	struct clk* aclk_vio1 = clk_get(NULL, "aclk_vio1");
 	struct clk* parent;
 	struct clk *gpll = clk_get(NULL, "clk_gpll");
-	struct clk *cpll = clk_get(NULL, "clk_cpll");
 
 	clk_divider_ops.set_rate(hw, rate, parent_rate);
 
 	/* set aclk_vio */
-	if (parent_rate	== __clk_get_rate(gpll)) {
+	if (parent_rate	== __clk_get_rate(gpll))
 		parent = clk_get(NULL, "clk_gpll");
-		clk_set_parent(aclk_vio1, gpll);
-		clk_set_rate(aclk_vio1, 300*MHZ);
-	} else {
+	else
 		parent = clk_get(NULL, "clk_cpll");
-		clk_set_parent(aclk_vio1, cpll);
-		clk_set_rate(aclk_vio1, __clk_get_rate(cpll));
-	}
 
 	if (rockchip_get_cpu_version() == 0) {
 		clk_set_parent(aclk_vio1, parent);

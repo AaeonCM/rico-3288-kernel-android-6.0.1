@@ -849,6 +849,21 @@ struct dwc_otg_core_if {
 #define USB_MODE_FORCE_HOST (1)
 #define USB_MODE_FORCE_DEVICE (2)
 
+	u8 usb_early_detect;
+	u8 usb_pd_off;
+
+	/* Indicates need to delay enable device in ep nak interrupt */
+	bool delay_en_diepint_nak_quirk;
+
+	/* Indicates need to force a host channel halt */
+	bool hc_halt_quirk;
+
+	/* True if support high bandwidth endpoints */
+	bool high_bandwidth_en;
+
+	/* Indicate USB get VBUS 5V from PMIC(e.g. rk81x) */
+	bool pmic_vbus;
+
 #ifdef DWC_DEV_SRPCAP
 	/* This timer is needed to power on the hibernated host core if SRP is not
 	 * initiated on connected SRP capable device for limited period of time
@@ -872,6 +887,9 @@ struct dwc_otg_core_if {
 	uint16_t rx_fifo_size;
 	/** Size of Non-periodic Tx FIFO (Bytes) */
 	uint16_t nperio_tx_fifo_size;
+
+	/* 1 if need to enable device in ep nak interrupt */
+	u8 diepint_nak_enable;
 
 	/** 1 if DMA is enabled, 0 otherwise. */
 	uint8_t dma_enable;
@@ -1040,6 +1058,11 @@ extern void hc_xfer_timeout(void *ptr);
  * This function is called when transfer is timed out on endpoint.
  */
 extern void ep_xfer_timeout(void *ptr);
+
+/*
+ * This function is called when set register and wait for completion.
+ */
+int dwc_otg_wait_bit_set(volatile u32 *reg, u32 bit, u32 timeout);
 
 /*
  * The following functions are functions for works

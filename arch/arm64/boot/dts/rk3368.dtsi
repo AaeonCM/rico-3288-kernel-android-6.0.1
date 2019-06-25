@@ -400,8 +400,8 @@
 		fifo-depth = <0x100>;
 		bus-width = <8>;
 		tune_regsbase = <0x418>;
-		cru_regsbase = <0x320>;
-		cru_reset_offset = <3>;
+		resets = <&reset RK3368_SRST_EMMC>;
+		reset-names = "mmc_ahb_reset";
 	};
 
 	sdmmc: rksdmmc@ff0c0000 {
@@ -410,10 +410,9 @@
 		interrupts = <GIC_SPI 32 IRQ_TYPE_LEVEL_HIGH>;
 		#address-cells = <1>;
 		#size-cells = <0>;
-		pinctrl-names = "default", "idle", "udbg";
+		pinctrl-names = "default", "idle";
 		pinctrl-0 = <&sdmmc_clk &sdmmc_cmd &sdmmc_dectn &sdmmc_bus4>;
 		pinctrl-1 = <&sdmmc_gpio>;
-		pinctrl-2 = <&uart2_xfer &cpu_jtag &mcu_jtag &sdmmc_dectn>;
 		cd-gpios = <&gpio2 GPIO_B3 GPIO_ACTIVE_HIGH>;/*CD GPIO*/
 		clocks = <&clk_sdmmc0>, <&clk_gates21 0>, <&clk_gates20 10>;
 		clock-names = "clk_mmc", "hclk_mmc", "hpclk_mmc";
@@ -423,8 +422,8 @@
 		fifo-depth = <0x100>;
 		bus-width = <4>;
 		tune_regsbase = <0x400>;
-		cru_regsbase = <0x320>;
-		cru_reset_offset = <0>;
+		resets = <&reset RK3368_SRST_MMC0>;
+		reset-names = "mmc_ahb_reset";
 	};
 
 	sdio: rksdmmc@ff0d0000 {
@@ -444,8 +443,8 @@
 		fifo-depth = <0x100>;
 		bus-width = <4>;
 		tune_regsbase = <0x408>;
-		cru_regsbase = <0x320>;
-		cru_reset_offset = <1>;
+		resets = <&reset RK3368_SRST_SDIO0>;
+		reset-names = "mmc_ahb_reset";
 	};
 
 	spi0: spi@ff110000 {
@@ -852,7 +851,8 @@
 	hdmi: hdmi@ff980000 {
 		compatible = "rockchip,rk3368-hdmi";
 		reg = <0x0 0xff980000 0x0 0x20000>;
-		rockchip,grf = <&grf>;
+		resets = <&reset RK3368_SRST_HDMI>;
+		reset-names = "hdmi";
 		interrupts = <GIC_SPI 103 IRQ_TYPE_LEVEL_HIGH>;
 		pinctrl-names = "default", "gpio";
 		pinctrl-0 = <&hdmii2c_xfer &hdmi_cec>;
@@ -1032,7 +1032,8 @@
 
 	cpufreq {
 		compatible = "rockchip,rk3368-cpufreq";
-		rockchip,grf = <&grf>;
+		safe_freq_b = <1296000>; /* KHz */
+		safe_freq_l = <1008000>; /* KHz */
 	};
 
 	dvfs {
@@ -1067,6 +1068,7 @@
 						>;
 					lkg_adjust_volt_en = <1>;
 					channel = <0>;
+					tsadc-ch = <0>;
 					def_table_lkg = <25>;
 					min_adjust_freq = <216000>;
 					lkg_adjust_volt_table = <
@@ -1101,6 +1103,7 @@
 						>;
 					lkg_adjust_volt_en = <1>;
 					channel = <0>;
+					tsadc-ch = <0>;
 					def_table_lkg = <25>;
 					min_adjust_freq = <216000>;
 					lkg_adjust_volt_table = <
@@ -1411,8 +1414,8 @@
 		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-names = "irq_crypto";
 			clocks = <&clk_crypto>, <&clk_gates13 4>, <&clk_gates13 3>;
-		clock-names = "clk_crypto", "sclk_crypto", "mclk_crypto";
-		status = "okay";
+		clock-names = "clk_crypto", "hclk_crypto", "aclk_crypto";
+		status = "disabled";
 	};
 
 	dwc_control_usb: dwc-control-usb {

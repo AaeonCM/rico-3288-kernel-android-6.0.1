@@ -56,6 +56,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_MAX9877 if I2C
 	select SND_SOC_MC13783 if MFD_MC13XXX
 	select SND_SOC_ML26124 if I2C
+	select SND_SOC_NAU8540 if I2C
 	select SND_SOC_OMAP_HDMI_CODEC if OMAP4_DSS_HDMI
 	select SND_SOC_PCM3008
 	select SND_SOC_SGTL5000 if I2C
@@ -313,6 +314,9 @@ config SND_SOC_MAX98095
 config SND_SOC_MAX9850
 	tristate
 
+config SND_SOC_NAU8540
+	tristate
+
 config SND_SOC_OMAP_HDMI_CODEC
        tristate
 
@@ -324,6 +328,10 @@ config SND_SOC_RK3036
 
 config SND_SOC_RK312X
         tristate
+
+config SND_SOC_RK322X
+	select REGMAP_MMIO
+	tristate
 
 #Freescale sgtl5000 codec
 config SND_SOC_SGTL5000
@@ -594,6 +602,10 @@ config SND_SOC_RK616
 config SND_SOC_RK1000
 	tristate
 	depends on MFD_RK1000
+
+config SND_SOC_RK1108
+	select REGMAP_MMIO
+	tristate
 
 config SND_SOC_RK2928
 	tristate

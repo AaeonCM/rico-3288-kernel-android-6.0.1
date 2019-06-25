@@ -32,6 +32,7 @@
 #include <linux/module.h>
 #include <linux/rockchip/cpu.h>
 #include <linux/rockchip/cru.h>
+#include <linux/rockchip_ion.h>
 #include <asm/cacheflush.h>
 #include "iep_drv.h"
 #if defined(CONFIG_IEP_MMU)
@@ -87,18 +88,17 @@ iep_service_info iep_service;
 
 static void iep_reg_deinit(struct iep_reg *reg)
 {
-#if defined(CONFIG_IEP_IOMMU)
 	struct iep_mem_region *mem_region = NULL, *n;
 	/* release memory region attach to this registers table.*/
-	if (iep_service.iommu_dev) {
-		list_for_each_entry_safe(mem_region, n, &reg->mem_region_list, reg_lnk) {
-			/*ion_unmap_iommu(iep_service.iommu_dev, iep_service.ion_client, mem_region->hdl);*/
-			ion_free(iep_service.ion_client, mem_region->hdl);
-			list_del_init(&mem_region->reg_lnk);
-			kfree(mem_region);
-		}
+	list_for_each_entry_safe(mem_region, n,
+				 &reg->mem_region_list, reg_lnk) {
+		/*ion_unmap_iommu(iep_service.iommu_dev,
+				  iep_service.ion_client,
+				  mem_region->hdl);*/
+		ion_free(iep_service.ion_client, mem_region->hdl);
+		list_del_init(&mem_region->reg_lnk);
+		kfree(mem_region);
 	}
-#endif
 	list_del_init(&reg->session_link);
 	list_del_init(&reg->status_link);
 	kfree(reg);
@@ -1005,10 +1005,10 @@ static int iep_drv_probe(struct platform_device *pdev)
 	int ret = 0;
 	struct resource *res = NULL;
 	u32 version;
+	struct device_node *np = pdev->dev.of_node;
 #if defined(CONFIG_IEP_IOMMU)
 	u32 iommu_en = 0;
 	struct device *mmu_dev = NULL;
-	struct device_node *np = pdev->dev.of_node;
 	of_property_read_u32(np, "iommu_enabled", &iommu_en);
 #endif
 
@@ -1124,6 +1124,11 @@ static int iep_drv_probe(struct platform_device *pdev)
 		data->cap.max_dynamic_height = 2340;
 		data->cap.max_enhance_radius = 2;
 		break;
+	case 3:
+		data->cap.compression_noise_reduction_supported = 0;
+		data->cap.sampling_noise_reduction_supported = 0;
+		data->cap.cg_enhancement_supported = 0;
+		break;
 	default:
 		;
 	}
@@ -1136,17 +1141,17 @@ static int iep_drv_probe(struct platform_device *pdev)
 		goto err_misc_register;
 	}
 
-#if defined(CONFIG_IEP_IOMMU)
 	iep_service.iommu_dev = NULL;
+	iep_service.ion_client = rockchip_ion_client_create("iep");
+	if (IS_ERR(iep_service.ion_client)) {
+		IEP_ERR("failed to create ion client for vcodec");
+		return PTR_ERR(iep_service.ion_client);
+	} else {
+		IEP_INFO("iep ion client create success!\n");
+	}
+#if defined(CONFIG_IEP_IOMMU)
 	if (iommu_en) {
 		iep_power_on();
-		iep_service.ion_client = rockchip_ion_client_create("iep");
-		if (IS_ERR(iep_service.ion_client)) {
-			IEP_ERR("failed to create ion client for vcodec");
-			return PTR_ERR(iep_service.ion_client);
-		} else {
-			IEP_INFO("iep ion client create success!\n");
-		}
 
 		mmu_dev = rockchip_get_sysmmu_device_by_compatible(
 			IEP_IOMMU_COMPATIBLE_NAME);

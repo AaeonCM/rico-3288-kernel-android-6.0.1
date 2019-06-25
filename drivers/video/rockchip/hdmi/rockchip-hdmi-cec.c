@@ -1,34 +1,54 @@
-#include <linux/kernel.h>
-#include <linux/slab.h>
-#include <linux/workqueue.h>
 #include <linux/delay.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
 #include <linux/errno.h>
+#include <linux/firmware.h>
+#include <linux/ioctl.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/pagemap.h>
+#include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/workqueue.h>
-#include <linux/firmware.h>
 #include "rockchip-hdmi-cec.h"
-#include "linux/ioctl.h"
-#include "linux/pagemap.h"
 
 static struct cec_device *cec_dev;
 
 static int cecreadframe(struct cec_framedata *frame)
 {
-	if (frame == NULL || !cec_dev ||
-	    cec_dev->readframe == NULL || !cec_dev->enable)
-		return -1;
-	else
-		return cec_dev->readframe(cec_dev->hdmi, frame);
+	int ret = -1;
+
+	if (!frame || !cec_dev || !cec_dev->readframe || !cec_dev->enable) {
+		return ret;
+	} else {
+		mutex_lock(&cec_dev->hdmi->pclk_lock);
+		ret = cec_dev->readframe(cec_dev->hdmi, frame);
+		mutex_unlock(&cec_dev->hdmi->pclk_lock);
+		return ret;
+	}
 }
 
 static int cecsendframe(struct cec_framedata *frame)
 {
-	if (frame == NULL || !cec_dev || cec_dev->readframe == NULL)
-		return -1;
-	else
-		return cec_dev->sendframe(cec_dev->hdmi, frame);
+	int ret = -1;
+
+	if (!frame || !cec_dev || !cec_dev->sendframe) {
+		return ret;
+	} else {
+		mutex_lock(&cec_dev->hdmi->pclk_lock);
+		ret = cec_dev->sendframe(cec_dev->hdmi, frame);
+		mutex_unlock(&cec_dev->hdmi->pclk_lock);
+		return ret;
+	}
+}
+
+static void cecsetlogicaddr(int addr)
+{
+	if (!cec_dev || !cec_dev->setceclogicaddr) {
+		return;
+	} else {
+		mutex_lock(&cec_dev->hdmi->pclk_lock);
+		cec_dev->setceclogicaddr(cec_dev->hdmi, addr);
+		mutex_unlock(&cec_dev->hdmi->pclk_lock);
+	}
 }
 
 static void cecworkfunc(struct work_struct *work)
@@ -42,10 +62,8 @@ static void cecworkfunc(struct work_struct *work)
 		break;
 	case EVENT_RX_FRAME:
 		list_node = kmalloc(sizeof(*list_node), GFP_KERNEL);
-		if (list_node == NULL) {
-			pr_err("HDMI CEC: list kmalloc fail! ");
+		if (!list_node)
 			return;
-		}
 		cecreadframe(&list_node->cecframe);
 		if (cec_dev->enable) {
 			mutex_lock(&cec_dev->cec_lock);
@@ -71,6 +89,9 @@ void rockchip_hdmi_cec_submit_work(int event, int delay, void *data)
 	struct cec_delayed_work *work;
 
 	CECDBG("%s event %04x delay %d\n", __func__, event, delay);
+
+	if (!cec_dev)
+		return;
 
 	work = kmalloc(sizeof(*work), GFP_ATOMIC);
 
@@ -190,9 +211,7 @@ static long cec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case HDMI_IOCTL_CECSETLA:
 		ret = copy_from_user(&cec_dev->address_logic,
 				     argp, sizeof(int));
-		if (cec_dev->setceclogicaddr)
-			cec_dev->setceclogicaddr(cec_dev->hdmi,
-						 cec_dev->address_logic);
+		cecsetlogicaddr(cec_dev->address_logic);
 		break;
 	case HDMI_IOCTL_CECSEND:
 		ret = copy_from_user(&cecsendtemp, argp,
@@ -226,6 +245,9 @@ static long cec_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 	case HDMI_IOCTL_CECCLEARLA:
 		break;
+	case HDMI_IOCTL_CECWAKESTATE:
+		ret = copy_to_user(argp, &(cec_dev->hdmi->sleep), sizeof(int));
+		break;
 
 	default:
 		break;
@@ -249,10 +271,9 @@ int rockchip_hdmi_cec_init(struct hdmi *hdmi,
 	int ret, i;
 
 	cec_dev = kmalloc(sizeof(*cec_dev), GFP_KERNEL);
-	if (!cec_dev) {
-		pr_err("HDMI CEC: kmalloc fail!");
+	if (!cec_dev)
 		return -ENOMEM;
-	}
+
 	memset(cec_dev, 0, sizeof(struct cec_device));
 	mutex_init(&cec_dev->cec_lock);
 	INIT_LIST_HEAD(&cec_dev->ceclist);

@@ -42,16 +42,21 @@
 #endif
 #ifdef CONFIG_RK_3288_DSI_UBOOT
 DECLARE_GLOBAL_DATA_PTR;
-#define msleep(a) udelay(a * 1000)
 #define	printk(x...)	/* printf(x) */
 #endif
+
 static struct mipi_screen *gmipi_screen;
+
+static inline void mipidelay(unsigned int msecs)
+{
+	usleep_range(msecs * 1000, msecs * 1000 + 200);
+}
 
 static void rk_mipi_screen_pwr_disable(struct mipi_screen *screen)
 {
 	if (screen->lcd_en_gpio != INVALID_GPIO) {
 		gpio_direction_output(screen->lcd_en_gpio, !screen->lcd_en_atv_val);
-		msleep(screen->lcd_en_delay);
+		mipidelay(screen->lcd_en_delay);
 	} else{
 		MIPI_SCREEN_DBG("lcd_en_gpio is null");
 	}
@@ -59,7 +64,7 @@ static void rk_mipi_screen_pwr_disable(struct mipi_screen *screen)
 	if (screen->lcd_rst_gpio != INVALID_GPIO) {
 
 		gpio_direction_output(screen->lcd_rst_gpio, !screen->lcd_rst_atv_val);
-		msleep(screen->lcd_rst_delay);
+		mipidelay(screen->lcd_rst_delay);
 	} else {
 		MIPI_SCREEN_DBG("lcd_rst_gpio is null");
 	}
@@ -69,17 +74,17 @@ static void rk_mipi_screen_pwr_enable(struct mipi_screen *screen)
 {
 	if (screen->lcd_en_gpio != INVALID_GPIO) {
 		gpio_direction_output(screen->lcd_en_gpio, !screen->lcd_en_atv_val);
-		msleep(screen->lcd_en_delay);
+		mipidelay(screen->lcd_en_delay);
 		gpio_direction_output(screen->lcd_en_gpio, screen->lcd_en_atv_val);
-		msleep(screen->lcd_en_delay);
+		mipidelay(screen->lcd_en_delay);
 	} else
 		MIPI_SCREEN_DBG("lcd_en_gpio is null\n");
 
 	if (screen->lcd_rst_gpio != INVALID_GPIO) {
 		gpio_direction_output(screen->lcd_rst_gpio, !screen->lcd_rst_atv_val);
-		msleep (screen->lcd_rst_delay);
+		mipidelay(screen->lcd_rst_delay);
 		gpio_direction_output(screen->lcd_rst_gpio, screen->lcd_rst_atv_val);
-		msleep(screen->lcd_rst_delay);
+		mipidelay(screen->lcd_rst_delay);
 	} else
 		MIPI_SCREEN_DBG("lcd_rst_gpio is null\n");
 }
@@ -127,7 +132,8 @@ static void rk_mipi_screen_cmd_init(struct mipi_screen *screen)
 			} else {
 				MIPI_SCREEN_DBG("dsi is err.\n");
 			}
-			msleep(dcs_cmd->dcs_cmd.delay);
+			if (dcs_cmd->dcs_cmd.delay != 0)
+				mipidelay(dcs_cmd->dcs_cmd.delay);
 		} else if (dcs_cmd->dcs_cmd.type == HSDT) {
 			cmds[0] = HSDT;
 			if (dcs_cmd->dcs_cmd.dsi_id == 0) {
@@ -143,7 +149,8 @@ static void rk_mipi_screen_cmd_init(struct mipi_screen *screen)
 			} else {
 				MIPI_SCREEN_DBG("dsi is err.");
 			}
-			msleep(dcs_cmd->dcs_cmd.delay);
+			if (dcs_cmd->dcs_cmd.delay != 0)
+				mipidelay(dcs_cmd->dcs_cmd.delay);
 		} else
 			MIPI_SCREEN_DBG("cmd type err.\n");
 	}
@@ -184,7 +191,7 @@ int rk_mipi_screen(void)
 		if (rk_dsi_num == 2)
 			dsi_send_packet(1, dcs, 3);
 
-		msleep(20);
+		mipidelay(20);
 
 		dcs[0] = LPDT;
 		dcs[1] = DTYPE_DCS_SWRITE_0P;
@@ -193,7 +200,7 @@ int rk_mipi_screen(void)
 		if (rk_dsi_num == 2)
 			dsi_send_packet(1, dcs, 3);
 
-		msleep(20);
+		mipidelay(20);
 
 		dsi_enable_command_mode(0, 0);
 		if (rk_dsi_num == 2) {
@@ -260,7 +267,7 @@ int rk_mipi_screen_standby(u8 enable)
 		if (rk_dsi_num == 2)
 			dsi_send_packet(1, dcs, 3);
 
-		msleep(30);
+		mipidelay(30);
 
 		dcs[0] = LPDT;
 		dcs[1] = DTYPE_DCS_SWRITE_0P;
@@ -269,7 +276,7 @@ int rk_mipi_screen_standby(u8 enable)
 		if (rk_dsi_num == 2)
 			dsi_send_packet(1, dcs, 3);
 
-		msleep(100);
+		mipidelay(100);
 		rk_mipi_screen_pwr_disable(gmipi_screen);
 		MIPI_SCREEN_DBG("++++enable++++++++++++%s:%d\n", __func__, __LINE__);
 	} else {
@@ -278,7 +285,8 @@ int rk_mipi_screen_standby(u8 enable)
 	return 0;
 }
 #ifdef CONFIG_LCD_MIPI
-static int rk_mipi_screen_init_dt(struct mipi_screen *screen)
+static int rk_mipi_screen_init_dt(struct device *dev,
+				  struct mipi_screen *screen)
 {
 	struct device_node *childnode, *grandchildnode, *root;
 	struct mipi_dcs_cmd_ctr_list *dcs_cmd;
@@ -286,7 +294,6 @@ static int rk_mipi_screen_init_dt(struct mipi_screen *screen)
 	struct property *prop;
 	enum of_gpio_flags flags;
 	u32 value, i, debug, gpio, ret, length;
-	u32 cmds[sizeof(dcs_cmd->dcs_cmd.cmds) / sizeof(u32)];
 
 	memset(screen, 0, sizeof(*screen));
 
@@ -421,32 +428,39 @@ static int rk_mipi_screen_init_dt(struct mipi_screen *screen)
 			dcs_cmd = kmalloc(sizeof(struct mipi_dcs_cmd_ctr_list), GFP_KERNEL);
 			strcpy(dcs_cmd->dcs_cmd.name, childnode->name);
 
+			dcs_cmd->dcs_cmd.cmds =
+				devm_kzalloc(dev, CMD_LEN_MAX, GFP_KERNEL);
+			if (!dcs_cmd->dcs_cmd.cmds) {
+				pr_err("malloc cmds fail!\n");
+				return -ENOMEM;
+			}
+
 			prop = of_find_property(childnode, "rockchip,cmd", &length);
 			if (!prop) {
 				MIPI_SCREEN_DBG("Can not read property: cmds\n");
+				kfree(dcs_cmd->dcs_cmd.cmds);
+				dcs_cmd->dcs_cmd.cmds = NULL;
 				return -EINVAL;
 			}
 
-			if (length > sizeof(dcs_cmd->dcs_cmd.cmds)) {
+			if ((length / sizeof(u32)) > CMD_LEN_MAX) {
 				/* the length can not longer than the cmds arrary in struct dcs_cmds */
 				MIPI_SCREEN_DBG("error: the dcs cmd length is %d, but the max length supported is %d\n",
-						length / sizeof(u32), sizeof(dcs_cmd->dcs_cmd.cmds) / sizeof(32));
+					length, CMD_LEN_MAX);
 			}
 			MIPI_SCREEN_DBG("\n childnode->name =%s:length=%d\n", childnode->name, (length / sizeof(u32)));
 
-			ret = of_property_read_u32_array(childnode,  "rockchip,cmd", cmds, (length / sizeof(u32)));
+			ret = of_property_read_u32_array(childnode,
+							 "rockchip,cmd",
+							 dcs_cmd->dcs_cmd.cmds,
+							 length / sizeof(u32));
 			if (ret < 0) {
 				MIPI_SCREEN_DBG("%s: Can not read property: %s--->cmds\n", __func__, childnode->name);
+				kfree(dcs_cmd->dcs_cmd.cmds);
+				dcs_cmd->dcs_cmd.cmds = NULL;
 				return ret;
 			} else {
 				dcs_cmd->dcs_cmd.cmd_len =  length / sizeof(u32);
-				for (i = 0; (i < (length / sizeof(u32))) && (i < (sizeof(dcs_cmd->dcs_cmd.cmds) / sizeof(u32))); i++) {
-					/* avoid the array out of range */
-					MIPI_SCREEN_DBG("cmd[%d]=%02x£¬", i+1, cmds[i]);
-					dcs_cmd->dcs_cmd.cmds[i] = cmds[i];
-				}
-
-				MIPI_SCREEN_DBG("dcs_cmd->dcs_cmd.cmd_len=%d\n", dcs_cmd->dcs_cmd.cmd_len);
 			}
 			ret = of_property_read_u32(childnode, "rockchip,dsi_id", &value);
 			if (ret) {
@@ -537,7 +551,7 @@ EXPORT_SYMBOL(rk_mipi_get_dsi_clk);
 static int rk_mipi_screen_init_dt(struct mipi_screen *screen)
 {
 	struct mipi_dcs_cmd_ctr_list *dcs_cmd;
-	u32 i, cmds[20];
+	u32 i;
 	int length;
 	int err;
 	int node;
@@ -685,14 +699,18 @@ static int rk_mipi_screen_init_dt(struct mipi_screen *screen)
 			dcs_cmd->dcs_cmd.dsi_id = fdtdec_get_int(blob, noffset, "rockchip,dsi_id", -1);
 			MIPI_SCREEN_DBG("dcs_cmd.dsi_id=%02x\n", dcs_cmd->dcs_cmd.dsi_id);
 			fdt_getprop(blob, noffset, "rockchip,cmd", &length);
-			dcs_cmd->dcs_cmd.cmd_len = length / sizeof(u32) ;
-			err = fdtdec_get_int_array(blob, noffset, "rockchip,cmd", cmds, dcs_cmd->dcs_cmd.cmd_len);
-			MIPI_SCREEN_DBG("length=%d,cmd_len = %d  err = %d\n", length, dcs_cmd->dcs_cmd.cmd_len, err);
-			for (i = 0; i < (length / sizeof(u32)); i++) {
-				MIPI_SCREEN_DBG("cmd[%d]=0x%08x, ", i+1, cmds[i]);
-				dcs_cmd->dcs_cmd.cmds[i] = cmds[i];
+			dcs_cmd->dcs_cmd.cmd_len = length / sizeof(u32);
+
+			dcs_cmd->dcs_cmd.cmds = calloc(1, CMD_LEN_MAX);
+			if (!dcs_cmd->dcs_cmd.cmds) {
+				pr_err("calloc cmds fail!\n");
+				return -1;
 			}
-			MIPI_SCREEN_DBG("\n");
+
+			err = fdtdec_get_int_array(blob, noffset,
+						   "rockchip,cmd",
+						   dcs_cmd->dcs_cmd.cmds,
+						   dcs_cmd->dcs_cmd.cmd_len);
 			dcs_cmd->dcs_cmd.delay = fdtdec_get_int(blob, noffset, "rockchip,cmd_delay", -1);
 			MIPI_SCREEN_DBG("dcs_cmd.delay=%d\n", dcs_cmd->dcs_cmd.delay);
 			list_add_tail(&dcs_cmd->list, &screen->cmdlist_head);
@@ -734,7 +752,7 @@ static int __init rk_mipi_screen_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	ret = rk_mipi_screen_init_dt(gmipi_screen);
+	ret = rk_mipi_screen_init_dt(&pdev->dev, gmipi_screen);
 	if (ret < 0) {
 		dev_err(&pdev->dev, " rk_mipi_screen_init_dt fail!\n");
 		return -1;

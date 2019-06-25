@@ -61,6 +61,9 @@
 #include "dwc_otg_attr.h"
 
 #include "usbdev_rk.h"
+
+#define MAX_RECONNECT	6
+
 static struct gadget_wrapper {
 	dwc_otg_pcd_t *pcd;
 
@@ -164,7 +167,7 @@ static int ep_enable(struct usb_ep *usb_ep,
 		return -EINVAL;
 	}
 
-	usb_ep->maxpacket = le16_to_cpu(ep_desc->wMaxPacketSize);
+	usb_ep->maxpacket = usb_endpoint_maxp(ep_desc);
 
 	return 0;
 }
@@ -366,7 +369,8 @@ static int ep_queue(struct usb_ep *usb_ep, struct usb_request *usb_req,
 		/* In device DMA mode when gadget perform ep_queue request
 		 * with buffer length 0, Kernel stack dump occurred. For 0
 		 * length buffers perform dma_map_single() with length 4.*/
-		if (usb_req->dma == DWC_DMA_ADDR_INVALID) {
+		if (usb_req->dma == DWC_DMA_ADDR_INVALID &&
+		    ep != NULL) {
 			dma_addr =
 			    dma_map_single(gadget_wrapper->gadget.dev.parent,
 					   usb_req->buf,
@@ -746,6 +750,9 @@ static int dwc_otg_pcd_pullup(struct usb_gadget *_gadget, int is_on)
 		pcd->conn_status = 0;
 	} else {
 		dwc_otg_pcd_pullup_disable(pcd);
+		/* report disconnect; the driver is already quiesced */
+		if (pcd->fops->disconnect)
+			pcd->fops->disconnect(pcd);
 		pcd->conn_en = 0;
 	}
 
@@ -933,7 +940,8 @@ static int _complete(dwc_otg_pcd_t *pcd, void *ep_handle,
 
 	if (GET_CORE_IF(pcd)->dma_enable) {
 		/* if (req->length != 0) */
-		if (req->dma != DWC_DMA_ADDR_INVALID) {
+		if (req->dma != DWC_DMA_ADDR_INVALID &&
+		    ep != NULL) {
 			dma_unmap_single(gadget_wrapper->gadget.dev.parent,
 					 req->dma,
 					 req->length !=
@@ -1497,6 +1505,7 @@ static void dwc_phy_reconnect(struct work_struct *work)
 		dctl.b.sftdiscon = 0;
 		DWC_WRITE_REG32(&core_if->dev_if->dev_global_regs->dctl,
 				dctl.d32);
+		usleep_range(3500, 4000);
 		printk
 		    ("*******************soft connect!!!*******************\n");
 	}
@@ -1579,11 +1588,11 @@ static void check_id(struct work_struct *work)
 	    container_of(work, dwc_otg_pcd_t, check_id_work.work);
 	struct dwc_otg_device *otg_dev = _pcd->otg_dev;
 	struct dwc_otg_platform_data *pldata = otg_dev->pldata;
-	static int last_id = -1;
 	int id = pldata->get_status(USB_STATUS_ID);
 
-	if (last_id != id) {
-		pr_info("[otg id chg] last id %d current id %d\n", last_id, id);
+	if (otg_dev->last_id != id) {
+		pr_info("[otg id chg] last id %d current id %d\n",
+			otg_dev->last_id, id);
 
 		if (pldata->phy_status == USB_PHY_SUSPEND) {
 			pldata->clock_enable(pldata, 1);
@@ -1593,7 +1602,7 @@ static void check_id(struct work_struct *work)
 		/* Force Device or Host by id */
 		id_status_change(otg_dev->core_if, id);
 	}
-	last_id = id;
+	otg_dev->last_id = id;
 	schedule_delayed_work(&_pcd->check_id_work, (HZ));
 }
 
@@ -1603,50 +1612,58 @@ static void dwc_otg_pcd_check_vbus_work(struct work_struct *work)
 	    container_of(work, dwc_otg_pcd_t, check_vbus_work.work);
 	struct dwc_otg_device *otg_dev = _pcd->otg_dev;
 	struct dwc_otg_platform_data *pldata = otg_dev->pldata;
+	int bvalid = pldata->get_status(USB_STATUS_BVABLID);
+	int iddig = pldata->get_status(USB_STATUS_ID);
+	u8 usb_mode = otg_dev->core_if->usb_mode;
 
-	if (pldata->get_status(USB_STATUS_BVABLID) &&
-	    pldata->get_status(USB_STATUS_ID)) {
-		/* if usb not connect before ,then start connect */
+	if (bvalid && (iddig || (usb_mode == USB_MODE_FORCE_DEVICE))) {
+		/* If usb not connect before, then start connect */
 		if (_pcd->vbus_status == USB_BC_TYPE_DISCNT) {
 			printk("***************vbus detect*****************\n");
-			if( pldata->bc_detect_cb != NULL )
-			 	pldata->bc_detect_cb(_pcd->vbus_status =
-			 		usb_battery_charger_detect(1));
+
+			if (pldata->bc_detect_cb && iddig)
+				pldata->bc_detect_cb(_pcd->vbus_status =
+					usb_battery_charger_detect(1));
 			else
 				_pcd->vbus_status = USB_BC_TYPE_SDP;
+
 			if (_pcd->conn_en) {
 				goto connect;
 			} else if (pldata->phy_status == USB_PHY_ENABLED) {
-				/* do not allow to connect, suspend phy */
+				/* Do not allow to connect, suspend phy */
 				pldata->phy_suspend(pldata, USB_PHY_SUSPEND);
 				udelay(3);
 				pldata->clock_enable(pldata, 0);
 			}
-		} else if ((_pcd->conn_en) && (_pcd->conn_status >= 0)
-			   && (_pcd->conn_status < 2)) {
+		} else if ((_pcd->conn_en) && (_pcd->conn_status >= 0) &&
+			   (_pcd->conn_status < MAX_RECONNECT)) {
 			printk("**************soft reconnect**************\n");
 			goto connect;
-		} else if (_pcd->conn_status == 2) {
-			/* release pcd->wake_lock if fail to connect,
-			 * allow system to enter second sleep.
-			 */
-			dwc_otg_msc_unlock(_pcd);
+		} else if (_pcd->conn_status == MAX_RECONNECT) {
 			_pcd->conn_status++;
-			if (pldata->bc_detect_cb != NULL) {
+
+			if (pldata->bc_detect_cb && iddig) {
 				pldata->bc_detect_cb(_pcd->vbus_status =
 						     usb_battery_charger_detect(1));
 			} else {
 				_pcd->vbus_status = USB_BC_TYPE_DCP;
 			}
-			/* fail to connect, suspend usb phy and disable clk */
+
+			/* Fail to connect, suspend usb phy and disable clk */
 			if (pldata->phy_status == USB_PHY_ENABLED) {
 				pldata->phy_suspend(pldata, USB_PHY_SUSPEND);
 				udelay(3);
 				pldata->clock_enable(pldata, 0);
 			}
+
+			/*
+			 * Release pcd->wake_lock if fail to connect,
+			 * and allow system to enter deep sleep.
+			 */
+			dwc_otg_msc_unlock(_pcd);
 		}
 	} else {
-		if (pldata->bc_detect_cb != NULL)
+		if (pldata->bc_detect_cb && iddig)
 			pldata->bc_detect_cb(_pcd->vbus_status =
 					     usb_battery_charger_detect(0));
 		else
@@ -1657,22 +1674,23 @@ static void dwc_otg_pcd_check_vbus_work(struct work_struct *work)
 		}
 
 		if (pldata->phy_status == USB_PHY_ENABLED) {
-			/* release wake lock */
-			dwc_otg_msc_unlock(_pcd);
-			if (pldata->get_status(USB_STATUS_ID)) {
-				/* no vbus detect here , close usb phy  */
+			if (iddig || (usb_mode == USB_MODE_FORCE_DEVICE)) {
+				/* No vbus detect here , suspend usb phy */
 				pldata->phy_suspend(pldata, USB_PHY_SUSPEND);
 				udelay(3);
 				pldata->clock_enable(pldata, 0);
 			}
+
+			/* Release wake lock */
+			dwc_otg_msc_unlock(_pcd);
 		}
 
-		/* usb phy bypass to uart mode  */
+		/* Bypass usb phy to uart mode  */
 		if (pldata->dwc_otg_uart_mode != NULL)
 			pldata->dwc_otg_uart_mode(pldata, PHY_UART_MODE);
 	}
 
-	if (pldata->get_status(USB_STATUS_ID))
+	if (iddig || (usb_mode == USB_MODE_FORCE_DEVICE))
 		schedule_delayed_work(&_pcd->check_vbus_work, HZ);
 	return;
 
@@ -1685,8 +1703,9 @@ connect:
 	if (_pcd->conn_status == 0)
 		dwc_otg_msc_lock(_pcd);
 
-	schedule_delayed_work(&_pcd->reconnect, 8);	/* delay 8 jiffies */
+	schedule_delayed_work(&_pcd->reconnect, 8);
 	schedule_delayed_work(&_pcd->check_vbus_work, (HZ));
+
 	return;
 }
 
@@ -1706,20 +1725,29 @@ void dwc_otg_pcd_start_check_vbus_work(dwc_otg_pcd_t *pcd)
 int dwc_vbus_status(void)
 {
 #ifdef CONFIG_USB20_OTG
+	struct dwc_otg_platform_data *pldata;
 	dwc_otg_pcd_t *pcd = 0;
-	if (gadget_wrapper) {
-		pcd = gadget_wrapper->pcd;
-	}
 
-	if (!pcd)
+	if (gadget_wrapper)
+		pcd = gadget_wrapper->pcd;
+
+	if (pcd) {
+		pldata = pcd->otg_dev->pldata;
+		if (pldata->get_status(USB_STATUS_BVABLID) &&
+		    pldata->get_status(USB_STATUS_ID)) {
+			if (pcd->vbus_status)
+				return pcd->vbus_status;
+			else
+				return USB_BC_TYPE_SDP;
+		}
+			return 0;
+	} else {
 		return 0;
-	else
-		return pcd->vbus_status;
+	}
 #else
 	return 0;
 #endif
 }
-
 EXPORT_SYMBOL(dwc_vbus_status);
 
 static void dwc_otg_pcd_work_init(dwc_otg_pcd_t *pcd,
@@ -1728,6 +1756,7 @@ static void dwc_otg_pcd_work_init(dwc_otg_pcd_t *pcd,
 
 	struct dwc_otg_device *otg_dev = pcd->otg_dev;
 	struct dwc_otg_platform_data *pldata = otg_dev->pldata;
+	u32 usb_early_detect = otg_dev->core_if->usb_early_detect;
 
 	pcd->vbus_status = USB_BC_TYPE_DISCNT;
 	pcd->phy_suspend = USB_PHY_ENABLED;
@@ -1738,20 +1767,26 @@ static void dwc_otg_pcd_work_init(dwc_otg_pcd_t *pcd,
 
 	wake_lock_init(&pcd->wake_lock, WAKE_LOCK_SUSPEND, "usb_pcd");
 
-	if (dwc_otg_is_device_mode(pcd->core_if) &&
-	    (otg_dev->core_if->usb_mode != USB_MODE_FORCE_HOST)) {
-		if (pldata->get_status(USB_STATUS_BVABLID)) {
-			/* enter usb phy mode */
-			pldata->dwc_otg_uart_mode(pldata, PHY_USB_MODE);
+	if (pldata->dwc_otg_uart_mode != NULL) {
+		if (dwc_otg_is_device_mode(pcd->core_if) &&
+		    (otg_dev->core_if->usb_mode != USB_MODE_FORCE_HOST)) {
+			if (pldata->get_status(USB_STATUS_BVABLID)) {
+				/* enter usb phy mode */
+				pldata->dwc_otg_uart_mode(pldata,
+							  PHY_USB_MODE);
+			} else {
+				/* usb phy bypass to uart mode */
+				pldata->dwc_otg_uart_mode(pldata,
+							  PHY_UART_MODE);
+			}
 		} else {
-			/* usb phy bypass to uart mode */
-			pldata->dwc_otg_uart_mode(pldata, PHY_UART_MODE);
+			/* host mode,enter usb phy mode */
+			pldata->dwc_otg_uart_mode(pldata, PHY_USB_MODE);
 		}
-	} else if (pldata->dwc_otg_uart_mode != NULL) {
-		/* host mode,enter usb phy mode */
-		pldata->dwc_otg_uart_mode(pldata, PHY_USB_MODE);
 	}
-	schedule_delayed_work(&pcd->check_id_work, 8 * HZ);
+
+	schedule_delayed_work(&pcd->check_id_work, usb_early_detect * HZ);
+
 	if (otg_dev->core_if->usb_mode == USB_MODE_FORCE_DEVICE) {
 		pcd->vbus_status = 0;
 		dwc_otg_core_init(otg_dev->core_if);

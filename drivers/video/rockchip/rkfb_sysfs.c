@@ -104,8 +104,10 @@ static ssize_t show_screen_info(struct device *dev,
 
 	if (ft > 0)
 		fps = div64_u64(1000000000000llu, ft);
-	return snprintf(buf, PAGE_SIZE, "xres:%d\nyres:%d\nfps:%d\n",
-			screen->mode.xres, screen->mode.yres, fps);
+	return snprintf(buf, PAGE_SIZE,
+			"xres:%d\nyres:%d\nfps:%d\ntype:%d\ninterlace:%d\n",
+			screen->mode.xres, screen->mode.yres,
+			fps, screen->type, screen->mode.vmode);
 }
 
 static ssize_t show_disp_info(struct device *dev,
@@ -190,7 +192,7 @@ static int dump_win(struct ion_client *ion_client,
 		start = phys_addr;
 		nr_pages = roundup(width * height * (bits >> 3), PAGE_SIZE);
 		nr_pages /= PAGE_SIZE;
-		pages = kzalloc(sizeof(struct page) * nr_pages,GFP_KERNEL);
+		pages = kzalloc(sizeof(struct page) * nr_pages, GFP_KERNEL);
 		while (i < nr_pages) {
 			pages[i] = phys_to_page(start);
 			start += PAGE_SIZE;
@@ -279,7 +281,7 @@ void trace_buffer_dump(struct device *dev, struct rk_lcdc_driver *dev_drv)
 	struct rk_fb_reg_win_data *win_data;
 	struct rk_fb_reg_area_data *area_data;
 	struct rkfb_sys_trace *trace = dev_drv->trace_buf;
-	int i,j;
+	int i, j;
 
 	if (!trace)
 		return;
@@ -361,9 +363,9 @@ static ssize_t set_dump_buffer(struct device *dev,
 
 			if (kstrtoint(p + 4, 0, &win))
 				dev_err(dev, "can't found trace frames\n");
-			if (win < 10)
+			if (win < 10) {
 			       mask_win |= 1 << win;
-			else {
+			} else {
 				mask_win |= 1 << (win / 10);
 				mask_area |= 1 << (win % 10);
 			}
@@ -409,12 +411,14 @@ static ssize_t set_dump_buffer(struct device *dev,
 			u16 xact, yact;
 			int data_format;
 			u32 dsp_addr;
+			int ymirror;
 
 			mutex_unlock(&dev_drv->front_lock);
 
 			if (dev_drv->ops->get_dspbuf_info)
 				dev_drv->ops->get_dspbuf_info(dev_drv, &xact,
-						&yact, &data_format, &dsp_addr);
+						&yact, &data_format, &dsp_addr,
+						&ymirror);
 
 			dump_win(NULL, NULL, dsp_addr, xact, yact, data_format,
 				 0, 0, 0, is_bmp, false);
@@ -448,10 +452,12 @@ static ssize_t set_dump_buffer(struct device *dev,
 				win_data = &front_regs->reg_win_data[i];
 				area_data = &win_data->reg_area_data[j];
 
-				dump_win(rk_fb->ion_client, area_data->ion_handle,
+				dump_win(rk_fb->ion_client,
+					 area_data->ion_handle,
 					 area_data->smem_start,
 					 area_data->xvir, area_data->yvir,
-					 area_data->data_format, trace->count_frame,
+					 area_data->data_format,
+					 trace->count_frame,
 					 i, j, trace->is_bmp, trace->is_append);
 				if (area_data->ion_handle)
 					ion_handle_put(area_data->ion_handle);
@@ -596,7 +602,7 @@ static ssize_t set_dsp_buffer(struct device *dev,
 			}
 		}
 
-		if (win_config.ret_fence_fd > 0){
+		if (win_config.ret_fence_fd > 0) {
 			acq_fence =
 			sync_fence_fdget(win_config.ret_fence_fd);
 			sync_fence_put(acq_fence);
@@ -682,7 +688,7 @@ static ssize_t show_overlay(struct device *dev,
 	struct fb_info *fbi = dev_get_drvdata(dev);
 	struct rk_fb_par *fb_par = (struct rk_fb_par *)fbi->par;
 	struct rk_lcdc_driver *dev_drv = fb_par->lcdc_drv;
-	int ovl;
+	int ovl = 0;
 
 	if (dev_drv->ops->ovl_mgr)
 		ovl = dev_drv->ops->ovl_mgr(dev_drv, 0, 0);
@@ -721,7 +727,7 @@ static ssize_t show_fps(struct device *dev,
 	struct fb_info *fbi = dev_get_drvdata(dev);
 	struct rk_fb_par *fb_par = (struct rk_fb_par *)fbi->par;
 	struct rk_lcdc_driver *dev_drv = fb_par->lcdc_drv;
-	int fps;
+	int fps = 0;
 
 	if (dev_drv->ops->fps_mgr)
 		fps = dev_drv->ops->fps_mgr(dev_drv, 0, 0);
@@ -841,13 +847,6 @@ static ssize_t set_hwc_lut(struct device *dev, struct device_attribute *attr,
 		else
 			start++;
 	}
-#if 0
-	for (i = 0; i < 16; i++) {
-		for (j = 0; j < 16; j++)
-			printk("0x%08x ", hwc_lut[i * 16 + j]);
-		printk("\n");
-	}
-#endif
 	if (dev_drv->ops->set_hwc_lut)
 		dev_drv->ops->set_hwc_lut(dev_drv, hwc_lut, 1);
 
@@ -935,13 +934,6 @@ static ssize_t set_dsp_lut(struct device *dev, struct device_attribute *attr,
 		else
 			start++;
 	}
-#if 0
-	for (i = 0; i < 16; i++) {
-		for (j = 0; j < 16; j++)
-			printk("0x%08x ", dsp_lut[i * 16 + j]);
-		printk("\n");
-	}
-#endif
 	if (dev_drv->ops->set_dsp_lut)
 		dev_drv->ops->set_dsp_lut(dev_drv, dsp_lut);
 
@@ -966,7 +958,7 @@ static ssize_t set_dsp_cabc(struct device *dev, struct device_attribute *attr,
 	struct fb_info *fbi = dev_get_drvdata(dev);
 	struct rk_fb_par *fb_par = (struct rk_fb_par *)fbi->par;
 	struct rk_lcdc_driver *dev_drv = fb_par->lcdc_drv;
-	int space_max, ret, mode = 0, calc = 0,up = 0, down = 0, global = 0;
+	int space_max, ret = 0, mode = 0, calc = 0, up = 0, down = 0, global = 0;
 	const char *start = buf;
 
 	space_max = 10;	/*max space number 10*/
@@ -1013,7 +1005,7 @@ static ssize_t show_dsp_bcsh(struct device *dev,
 	struct fb_info *fbi = dev_get_drvdata(dev);
 	struct rk_fb_par *fb_par = (struct rk_fb_par *)fbi->par;
 	struct rk_lcdc_driver *dev_drv = fb_par->lcdc_drv;
-	int brightness, contrast, sat_con, sin_hue, cos_hue;
+	int brightness = 0, contrast = 0, sat_con = 0, sin_hue = 0, cos_hue = 0;
 
 	if (dev_drv->ops->get_dsp_bcsh_bcs) {
 		brightness = dev_drv->ops->get_dsp_bcsh_bcs(dev_drv,
@@ -1202,6 +1194,23 @@ static ssize_t show_lcdc_id(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%d\n", dev_drv->id);
 }
 
+static ssize_t show_win_property(struct device *dev,
+			    struct device_attribute *attr,
+			    char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct rk_fb_par *fb_par = (struct rk_fb_par *)fbi->par;
+	struct rk_lcdc_driver *dev_drv = fb_par->lcdc_drv;
+	int win_id = 0;
+
+	win_id = dev_drv->ops->fb_get_win_id(dev_drv, fbi->fix.id);
+	return snprintf(buf, PAGE_SIZE,
+			"feature: %d, max_input_x: %d, max_input_y: %d\n",
+			dev_drv->win[win_id]->property.feature,
+			dev_drv->win[win_id]->property.max_input_x,
+			dev_drv->win[win_id]->property.max_input_y);
+}
+
 static struct device_attribute rkfb_attrs[] = {
 	__ATTR(phys_addr, S_IRUGO, show_phys, NULL),
 	__ATTR(virt_addr, S_IRUGO, show_virt, NULL),
@@ -1221,6 +1230,7 @@ static struct device_attribute rkfb_attrs[] = {
 	__ATTR(bcsh, S_IRUGO | S_IWUSR, show_dsp_bcsh, set_dsp_bcsh),
 	__ATTR(scale, S_IRUGO | S_IWUSR, show_scale, set_scale),
 	__ATTR(lcdcid, S_IRUGO, show_lcdc_id, NULL),
+	__ATTR(win_property, S_IRUGO, show_win_property, NULL),
 };
 
 int rkfb_create_sysfs(struct fb_info *fbi)

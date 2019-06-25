@@ -29,15 +29,6 @@
 
 #include "rk_sdmmc_dbg.h"
 
-/* Rockchip implementation specific driver private data */
-struct dw_mci_rockchip_priv_data {
-	enum dw_mci_rockchip_type		ctrl_type;
-	u8				ciu_div;
-	u32				sdr_timing;
-	u32				ddr_timing;
-	u32				cur_speed;
-};
-
 static struct dw_mci_rockchip_compatible {
 	char				*compatible;
 	enum dw_mci_rockchip_type		ctrl_type;
@@ -62,6 +53,10 @@ static struct dw_mci_rockchip_compatible {
 		.compatible     = "rockchip,rk3368-sdmmc",
 		.ctrl_type      = DW_MCI_TYPE_RK3368,
 	},
+	{
+		.compatible	= "rockchip,rk322x-sdmmc",
+		.ctrl_type	= DW_MCI_TYPE_RK322X,
+	},
 };
 
 #define syscon_find(np, property) \
@@ -82,19 +77,12 @@ static int dw_mci_rockchip_priv_init(struct dw_mci *host)
 		if (of_device_is_compatible(host->dev->of_node,
 					    rockchip_compat[idx].compatible)) {
 			priv->ctrl_type = rockchip_compat[idx].ctrl_type;
-			host->cid = priv->ctrl_type;
 			if (priv->ctrl_type == DW_MCI_TYPE_RK3368) {
 				host->grf = syscon_regmap_lookup_by_phandle(
 						host->dev->of_node, "rockchip,grf");
 				if (IS_ERR(host->grf)) {
 					pr_err("No rockchip,grf phandle specified");
 					return PTR_ERR(host->grf);
-				}
-				host->cru = syscon_regmap_lookup_by_phandle(
-					host->dev->of_node, "rockchip,cru");
-				if (IS_ERR(host->cru)) {
-					pr_err("No rockchip,cru phandle specified");
-					return PTR_ERR(host->cru);
 				}
 			}
 		}
@@ -111,7 +99,8 @@ static int dw_mci_rockchip_setup_clock(struct dw_mci *host)
 	if ((priv->ctrl_type == DW_MCI_TYPE_RK3288) ||
 	    (priv->ctrl_type == DW_MCI_TYPE_RK3036) ||
 	    (priv->ctrl_type == DW_MCI_TYPE_RK312X) ||
-	    (priv->ctrl_type == DW_MCI_TYPE_RK3368))
+	    (priv->ctrl_type == DW_MCI_TYPE_RK3368) ||
+	    (priv->ctrl_type == DW_MCI_TYPE_RK322X))
 		host->bus_hz /= (priv->ciu_div + 1);
 
 	return 0;
@@ -130,10 +119,6 @@ static int dw_mci_rockchip_parse_dt(struct dw_mci *host)
 	return 0;
 }
 
-#define ROCKCHIP_MMC_DELAY_SEL BIT(10)
-#define ROCKCHIP_MMC_DEGREE_MASK 0x3
-#define ROCKCHIP_MMC_DELAYNUM_OFFSET 2
-#define ROCKCHIP_MMC_DELAYNUM_MASK (0xff << ROCKCHIP_MMC_DELAYNUM_OFFSET)
 #define PSECS_PER_SEC 1000000000000LL
 
 /*
@@ -148,10 +133,35 @@ static int dw_mci_rockchip_parse_dt(struct dw_mci *host)
 static int rockchip_mmc_set_phase(int degrees, struct dw_mci *host)
 {
 	unsigned long rate = clk_get_rate(host->clk_mmc)/2; /* 150M */
+	struct dw_mci_rockchip_priv_data *priv = host->priv;
 	u8 nineties, remainder;
 	u8 delay_num;
 	u32 raw_value;
 	u64 delay;
+	u32 delay_sel;
+	u32 sample_delaynum_offset;
+	u32 sample_degree_offset;
+	u32 sample_mask;
+
+	switch (priv->ctrl_type) {
+	case DW_MCI_TYPE_RK3288:
+	case DW_MCI_TYPE_RK3368:
+		delay_sel = 1 << 10;
+		sample_delaynum_offset = 0x2;
+		sample_degree_offset = 0x0;
+		sample_mask = 0x07ff;
+		break;
+	case DW_MCI_TYPE_RK322X:
+		delay_sel = 1 << 11;
+		sample_delaynum_offset = 0x3;
+		sample_degree_offset = 0x1;
+		sample_mask = 0x0fff;
+		break;
+	default:
+		pr_err("Unknown ctrl type(%d) or doesn't support tune.\n",
+		       priv->ctrl_type);
+		return -EPERM;
+	}
 
 	degrees++;
 	degrees -= ((degrees) * 10 % (360/NUM_PHASES*10)) / 10;
@@ -166,12 +176,13 @@ static int rockchip_mmc_set_phase(int degrees, struct dw_mci *host)
 	delay *= remainder;
 	delay_num = (u8) min(delay, 255ULL);
 
-	raw_value = delay_num ? ROCKCHIP_MMC_DELAY_SEL : 0;
-	raw_value |= delay_num << ROCKCHIP_MMC_DELAYNUM_OFFSET;
-	raw_value |= nineties;
+	raw_value = delay_num ? delay_sel : 0;
+	raw_value |= delay_num << sample_delaynum_offset;
+	raw_value |= nineties << sample_degree_offset;
 
 	cru_writel(0x00010001, host->tune_regsbase);
-	cru_writel(((0x07ff << 16)|(raw_value)), host->tune_regsbase + 4);
+	cru_writel(((sample_mask << 16)|(raw_value)),
+		   host->tune_regsbase + 4);
 	cru_writel(0x00010000, host->tune_regsbase);
 
 	return 0;
@@ -221,9 +232,6 @@ static int dw_mci_tuning_test(struct dw_mci_slot *slot, u32 opcode,
 
 		return -EIO;
 	} else {
-		dev_err(host->dev,
-			"Tuning error: cmd.error:%d, data.error:%d\n",
-			cmd.error, data.error);
 		if (cmd.error)
 			return cmd.error;
 		else
@@ -254,7 +262,8 @@ dw_mci_rockchip_execute_tuning(struct dw_mci_slot *slot, u32 opcode,
 	int middle_phase;
 
 	if (!of_property_read_u32(np, "tune_regsbase", &host->tune_regsbase)) {
-		pr_info("[%s] tuning regsbase addr 0x%03x.\n",
+		pr_info("[%s] tuning regsbase addr 0x%03x.\n"
+			"cmd/data error is normal in tuning, Please Ignore!!!\n",
 			mmc_hostname(host->mmc), host->tune_regsbase);
 	} else {
 		pr_err("[%s] tuning regsbase addr is missing!\n",
@@ -275,7 +284,8 @@ dw_mci_rockchip_execute_tuning(struct dw_mci_slot *slot, u32 opcode,
 
 	/* Try each phase and extract good ranges */
 	for (i = 0; i < NUM_PHASES - 8; i++) {
-		rockchip_mmc_set_phase(TUNING_ITERATION_TO_PHASE(i), host);
+		if (rockchip_mmc_set_phase(TUNING_ITERATION_TO_PHASE(i), host))
+			goto free;
 		v = !dw_mci_tuning_test(slot, opcode, tuning_data, blk_test);
 
 		if ((!prev_v) && v) {

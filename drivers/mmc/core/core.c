@@ -402,15 +402,18 @@ static void mmc_get_req_timeout(struct mmc_request *mrq, u32 *timeout)
 		if (mrq->cmd->opcode == MMC_ERASE ||
 		    (mrq->cmd->opcode == MMC_ERASE_GROUP_START) ||
 		    (mrq->cmd->opcode == MMC_ERASE_GROUP_END) ||
-		    (mrq->cmd->opcode == MMC_SEND_STATUS))
+		    (mrq->cmd->opcode == MMC_SEND_STATUS)) {
 			((mrq->cmd->opcode == MMC_ERASE) &&
 			 ((mrq->cmd->arg == MMC_DISCARD_ARG) ||
 			 (mrq->cmd->arg == MMC_TRIM_ARG))) ?
 			 (*timeout = 10000) : (*timeout = 25000);
-		else if (mrq->cmd->opcode == MMC_SWITCH)
+		} else if (mrq->cmd->opcode == MMC_SWITCH) {
 			*timeout = mrq->cmd->cmd_timeout_ms;
-		else
+			if (*timeout == 0)
+				*timeout = 600;
+		} else {
 			*timeout = 500;
+		}
 
 	} else {
 		*timeout = mrq->cmd->data->blocks *
@@ -421,9 +424,11 @@ static void mmc_get_req_timeout(struct mmc_request *mrq, u32 *timeout)
 	}
 
 	if ((mrq->cmd->opcode == SD_IO_RW_DIRECT) ||
-	    (mrq->cmd->opcode == SD_IO_RW_EXTENDED))
+	    (mrq->cmd->opcode == SD_IO_RW_EXTENDED)) {
 		*timeout = 8000;
-	else if ((mrq->cmd->opcode == MMC_SEND_TUNING_BLOCK_HS200) ||
+		if (((mrq->cmd->arg & 0x0e00) >> 9) == SDIO_CCCR_ABORT)
+			*timeout = 1000;
+	} else if ((mrq->cmd->opcode == MMC_SEND_TUNING_BLOCK_HS200) ||
 		 (mrq->cmd->opcode == MMC_SEND_TUNING_BLOCK))
 		*timeout = 100;
 }

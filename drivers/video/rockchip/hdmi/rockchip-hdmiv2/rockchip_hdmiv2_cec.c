@@ -21,7 +21,7 @@ static int rockchip_hdmiv2_cec_readframe(struct hdmi *hdmi,
 	int i, count;
 	char *data = (char *)frame;
 
-	if (frame == NULL)
+	if (((hdmi_dev->clk_on & HDMI_PCLK_ON) == 0) || !frame)
 		return -1;
 	count = hdmi_readl(hdmi_dev, CEC_RX_CNT);
 	CECDBG("%s count %d\n", __func__, count);
@@ -40,6 +40,8 @@ void rockchip_hdmiv2_cec_setcecla(struct hdmi *hdmi, int ceclgaddr)
 	struct hdmi_dev *hdmi_dev = hdmi->property->priv;
 	short val;
 
+	if ((hdmi_dev->clk_on & HDMI_PCLK_ON) == 0)
+		return;
 	if (ceclgaddr < 0 || ceclgaddr > 16)
 		return;
 	val = 1 << ceclgaddr;
@@ -53,6 +55,8 @@ static int rockchip_hdmiv2_cec_sendframe(struct hdmi *hdmi,
 	struct hdmi_dev *hdmi_dev = hdmi->property->priv;
 	int i, interrupt;
 
+	if ((hdmi_dev->clk_on & HDMI_PCLK_ON) == 0)
+		return CEC_SEND_NACK;
 	CECDBG("TX srcdestaddr %02x opcode %02x ",
 	       frame->srcdestaddr, frame->opcode);
 	if (frame->argcount) {
@@ -110,6 +114,14 @@ void rockchip_hdmiv2_cec_init(struct hdmi *hdmi)
 		init = 0;
 		/* init_waitqueue_head(&wait); */
 	}
+
+	/* Enable sending all message if sink refuse message broadcasted
+	   by us. For 3288, sending action will be break.*/
+	if (hdmi_dev->soctype == HDMI_SOC_RK3288 &&
+	    hdmi_readl(hdmi_dev, REVISION_ID) == 0x1a)
+		writel_relaxed((1 << 4) | (1 << 20),
+			       RK_GRF_VIRT + RK3288_GRF_SOC_CON16);
+
 	hdmi_writel(hdmi_dev, IH_MUTE_CEC_STAT0, m_ERR_INITIATOR |
 			m_ARB_LOST | m_NACK | m_DONE);
 	CECDBG("%s", __func__);

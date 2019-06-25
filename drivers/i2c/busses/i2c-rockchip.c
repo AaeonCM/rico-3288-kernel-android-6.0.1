@@ -34,6 +34,7 @@
 #include <linux/miscdevice.h>
 #include <linux/gpio.h>
 #include <asm/irq.h>
+#include <linux/syscore_ops.h>
 
 #if 0
 #define i2c_dbg(dev, format, arg...)		\
@@ -182,6 +183,18 @@ enum {
 
 /* I2C rx data register */
 #define I2C_RXDATA_BASE         0x200
+
+#define I2C_MAX_ADAPTER		16
+struct rockchip_i2c_data {
+	u32			num;
+	struct rockchip_i2c	*map[I2C_MAX_ADAPTER];
+};
+
+static struct rockchip_i2c_data s_data = {0};
+static struct rockchip_i2c_data *rockchip_i2c_get_data(void)
+{
+	return &s_data;
+}
 
 static void rockchip_show_regs(struct rockchip_i2c *i2c)
 {
@@ -627,12 +640,6 @@ static int rockchip_i2c_doxfer(struct rockchip_i2c *i2c,
 	int msleep_time = 400 * 1000 / i2c->scl_rate;	// ms
 	int can_sleep = !(in_atomic() || irqs_disabled());
 
-	mutex_lock(&i2c->suspend_lock);
-	if (i2c->suspended) {
-		dev_err(i2c->dev, "i2c is suspended\n");
-		return -EIO;
-	}
-
 	spin_lock_irqsave(&i2c->lock, flags);
 	i2c->addr = msgs[0].addr;
 	if (msgs[0].flags & I2C_M_TEN) {
@@ -724,7 +731,6 @@ static int rockchip_i2c_doxfer(struct rockchip_i2c *i2c,
 	if (error == -EAGAIN)
 		i2c_dbg(i2c->dev, "No ack(complete_what: 0x%x), Maybe slave(addr: 0x%04x) not exist or abnormal power-on\n",
 			i2c->complete_what, i2c->addr);
-	mutex_unlock(&i2c->suspend_lock);
 
 	return error;
 }
@@ -741,6 +747,16 @@ static int rockchip_i2c_xfer(struct i2c_adapter *adap,
 	int ret;
 	struct rockchip_i2c *i2c = i2c_get_adapdata(adap);
 	unsigned long scl_rate = i2c->scl_rate;
+	int can_sleep = !(in_atomic() || irqs_disabled());
+
+	if (can_sleep) {
+		mutex_lock(&i2c->suspend_lock);
+		if (i2c->suspended) {
+			dev_err(i2c->dev, "i2c is suspended\n");
+			mutex_unlock(&i2c->suspend_lock);
+			return -EIO;
+		}
+	}
 
 	clk_enable(i2c->clk);
 	if (i2c->check_idle) {
@@ -749,15 +765,16 @@ static int rockchip_i2c_xfer(struct i2c_adapter *adap,
 			state = rockchip_i2c_check_idle(i2c);
 			if (state == I2C_IDLE)
 				break;
-			if (in_atomic() || irqs_disabled())
-				mdelay(10);
-			else
+			if (can_sleep)
 				msleep(10);
+			else
+				mdelay(10);
 			retry--;
 		}
 		if (retry == 0) {
 			dev_err(i2c->dev, "i2c is not in idle(state = %d)\n", state);
-			return -EIO;
+			ret = -EIO;
+			goto out;
 		}
 	}
 
@@ -781,7 +798,11 @@ static int rockchip_i2c_xfer(struct i2c_adapter *adap,
 	ret = rockchip_i2c_doxfer(i2c, msgs, num);
 	i2c_dbg(i2c->dev, "i2c transfer stop: addr: 0x%04x, state: %d, ret: %d\n", msgs[0].addr, ret, i2c->state);
 
+out:
 	clk_disable(i2c->clk);
+	if (can_sleep)
+		mutex_unlock(&i2c->suspend_lock);
+
 	return (ret < 0) ? ret : num;
 }
 
@@ -802,12 +823,12 @@ static const struct i2c_algorithm rockchip_i2c_algorithm = {
  *
  * called by the bus driver when a suitable device is found
 */
-
 static int rockchip_i2c_probe(struct platform_device *pdev)
 {
 	struct rockchip_i2c *i2c = NULL;
 	struct resource *res;
 	struct device_node *np = pdev->dev.of_node;
+	struct rockchip_i2c_data *data = rockchip_i2c_get_data();
 	int ret;
 
 	if (!np) {
@@ -926,6 +947,9 @@ static int rockchip_i2c_probe(struct platform_device *pdev)
 	of_i2c_register_devices(&i2c->adap);
 	mutex_init(&i2c->suspend_lock);
 
+	data->map[data->num] = i2c;
+	data->num++;
+
 	return 0;
 }
 
@@ -945,19 +969,6 @@ static int rockchip_i2c_remove(struct platform_device *pdev)
 	mutex_unlock(&i2c->suspend_lock);
 
 	return 0;
-}
-
-/* rockchip_i2c_shutdown
- *
- * called when device is shutdown from the bus
-*/
-static void rockchip_i2c_shutdown(struct platform_device *pdev)
-{
-	struct rockchip_i2c *i2c = platform_get_drvdata(pdev);
-
-	mutex_lock(&i2c->suspend_lock);
-	i2c->suspended = 1;
-	mutex_unlock(&i2c->suspend_lock);
 }
 
 #ifdef CONFIG_PM
@@ -1007,7 +1018,6 @@ MODULE_DEVICE_TABLE(of, rockchip_i2c_of_match);
 static struct platform_driver rockchip_i2c_driver = {
 	.probe		= rockchip_i2c_probe,
 	.remove		= rockchip_i2c_remove,
-	.shutdown	= rockchip_i2c_shutdown,
 	.driver		= {
 		.owner	= THIS_MODULE,
 		.name	= "rockchip_i2c",
@@ -1016,8 +1026,36 @@ static struct platform_driver rockchip_i2c_driver = {
 	},
 };
 
+/*
+ * rockchip_i2c_shutdown
+ * called when device is shutdown from the bus
+ */
+static void rockchip_i2c_shutdown(void)
+{
+	struct rockchip_i2c_data *data = rockchip_i2c_get_data();
+	u32 i;
+
+	if (system_state != SYSTEM_RESTART)
+		return;
+
+	for (i = 0; i < data->num; i++) {
+		mutex_lock(&data->map[i]->suspend_lock);
+		data->map[i]->suspended = 1;
+		mutex_unlock(&data->map[i]->suspend_lock);
+	}
+}
+
+static struct syscore_ops rk_i2c_syscore_ops = {
+	.shutdown = rockchip_i2c_shutdown,
+};
+
 static int __init rockchip_i2c_init_driver(void)
 {
+	struct rockchip_i2c_data *data = rockchip_i2c_get_data();
+
+	data->num = 0;
+	register_syscore_ops(&rk_i2c_syscore_ops);
+
 	return platform_driver_register(&rockchip_i2c_driver);
 }
 

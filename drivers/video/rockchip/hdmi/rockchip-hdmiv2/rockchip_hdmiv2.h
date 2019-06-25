@@ -1,7 +1,10 @@
 #ifndef __RK32_HDMI_H__
 #define __RK32_HDMI_H__
-#include <linux/regmap.h>
 #include <linux/gpio.h>
+#include <linux/regmap.h>
+#include <linux/reset.h>
+#include <linux/rockchip/iomap.h>
+#include <linux/rockchip/grf.h>
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
@@ -13,6 +16,12 @@
 #else
 #define HDMIDBG(format, ...)
 #endif
+
+#define HDMI_PD_ON		BIT(0)
+#define HDMI_PCLK_ON		BIT(1)
+#define HDMI_HDCPCLK_ON		BIT(2)
+#define HDMI_CECCLK_ON		BIT(3)
+#define HDMI_EXT_PHY_CLK_ON	BIT(4)
 
 struct hdmi_dev_phy_para {
 	u32 maxfreq;
@@ -28,11 +37,12 @@ struct hdmi_dev {
 	void __iomem		*regbase;
 	void __iomem		*phybase;
 	struct regmap		*grf_base;
-
+	struct reset_control	*reset;
 	struct clk		*pd;
 	struct clk		*pclk;
 	struct clk		*hdcp_clk;
 	struct clk		*cec_clk;
+	struct clk		*pclk_phy;
 	struct hdmi		*hdmi;
 	struct device		*dev;
 	struct dentry		*debugfs_dir;
@@ -66,8 +76,12 @@ struct hdmi_dev {
 
 	struct hdmi_dev_phy_para *phy_table;
 	int			phy_table_size;
-
-	int			hpd_gpio;
-	int			irq_hpd;
+	const char		*vendor_name;
+	const char		*product_name;
+	unsigned char		deviceinfo;
+	int			io_pullup;
 };
+
+void ext_pll_set_27m_out(void);
+
 #endif /*__RK32_HDMI_H__*/

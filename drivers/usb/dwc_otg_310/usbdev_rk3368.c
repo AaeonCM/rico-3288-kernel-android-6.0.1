@@ -37,7 +37,7 @@ static void usb20otg_phy_suspend(void *pdata, int suspend)
 	struct dwc_otg_platform_data *usbpdata = pdata;
 	if (suspend) {
 		/* enable soft control */
-		uoc_write(UOC_HIWORD_UPDATE(0x1d5, 0x1ff, 0), 0x700);
+		uoc_write(UOC_HIWORD_UPDATE(0x1d1, 0x1ff, 0), 0x700);
 		usbpdata->phy_status = 1;
 	} else {
 		/* exit suspend */
@@ -186,15 +186,18 @@ static void dwc_otg_uart_mode(void *pdata, int enter_usb_uart_mode)
 static void usb20otg_power_enable(int enable)
 {
 	if (0 == enable) {
-		rk_battery_charger_detect_cb(USB_OTG_POWER_OFF);
 		/* disable otg_drv power */
 		if (gpio_is_valid(control_usb->otg_gpios->gpio))
 			gpio_set_value(control_usb->otg_gpios->gpio, 0);
+
+		rk_battery_charger_detect_cb(USB_OTG_POWER_OFF);
 	} else if (1 == enable) {
-		rk_battery_charger_detect_cb(USB_OTG_POWER_ON);
 		/* enable otg_drv power */
 		if (gpio_is_valid(control_usb->otg_gpios->gpio))
 			gpio_set_value(control_usb->otg_gpios->gpio, 1);
+
+		if (!usb20otg_get_status(USB_STATUS_BVABLID))
+			rk_battery_charger_detect_cb(USB_OTG_POWER_ON);
 	}
 }
 
@@ -237,7 +240,7 @@ static void usb20ehci_phy_suspend(void *pdata, int suspend)
 
 	if (suspend) {
 		/* enable soft control */
-		uoc_write(UOC_HIWORD_UPDATE(0x1d5, 0x1ff, 0), 0x728);
+		uoc_write(UOC_HIWORD_UPDATE(0x1d1, 0x1ff, 0), 0x728);
 		usbpdata->phy_status = 1;
 	} else {
 		/* exit suspend */

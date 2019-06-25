@@ -103,10 +103,10 @@ static int hdmi_set_3dmode(struct rk_display_device *device, int mode)
 	list_for_each(pos, modelist) {
 		display_modelist =
 			list_entry(pos, struct display_modelist, list);
-		if (hdmi->vic == display_modelist->vic)
-			break;
-		else
+		if (hdmi->vic != display_modelist->vic)
 			display_modelist = NULL;
+		else
+			break;
 	}
 	if (!display_modelist)
 		return -1;
@@ -133,9 +133,9 @@ static int hdmi_get_3dmode(struct rk_display_device *device)
 		return hdmi->mode_3d;
 }
 
-/*CEA 861-E: Audio Coding Type
-  sync width enum hdmi_audio_type
-*/
+/* CEA 861-E: Audio Coding Type
+ * sync width enum hdmi_audio_type
+ */
 static const char * const audioformatstr[] = {
 	"",
 	"LPCM",		/*HDMI_AUDIO_LPCM = 1,*/
@@ -196,7 +196,7 @@ static int hdmi_get_color(struct rk_display_device *device, char *buf)
 	i = snprintf(buf, PAGE_SIZE,
 		     "Supported Color Mode: %d\n", mode);
 	i += snprintf(buf + i, PAGE_SIZE - i,
-		      "Current Color Mode: %d\n", hdmi->colormode);
+		      "Current Color Mode: %d\n", hdmi->video.color_output);
 
 	mode = (1 << 1); /* 24 bit*/
 	if (hdmi->edid.deepcolor & HDMI_DEEP_COLOR_30BITS &&
@@ -211,7 +211,8 @@ static int hdmi_get_color(struct rk_display_device *device, char *buf)
 	i += snprintf(buf + i, PAGE_SIZE - i,
 		      "Supported Color Depth: %d\n", mode);
 	i += snprintf(buf + i, PAGE_SIZE - i,
-		      "Current Color Depth: %d\n", hdmi->colordepth);
+		      "Current Color Depth: %d\n",
+		      hdmi->video.color_output_depth);
 	i += snprintf(buf + i, PAGE_SIZE - i,
 		      "Supported Colorimetry: %d\n", hdmi->edid.colorimetry);
 	i += snprintf(buf + i, PAGE_SIZE - i,

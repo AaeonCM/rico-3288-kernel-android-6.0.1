@@ -1,7 +1,7 @@
 /*
  * Copyright (C) rockchip 2014
  * Author:zhangqing <zhangqing@rock-chips.com>
- *        
+ *
  * License Terms: GNU General Public License v2
  *
  * rockchip tsadc does not provide auto tsADC, so to monitor the required temperatures,
@@ -68,7 +68,7 @@ static void tsadc_monitor(struct work_struct *work)
 		if (data->max[i] < data->min[i])
 			continue;
 
-		temp = data->ops.read_sensor(i);
+		temp = data->ops.read_sensor(i, 0);
 		if (temp == INVALID_TEMP) {
 			dev_err(&data->pdev->dev, "TSADC read failed\n");
 			continue;
@@ -142,7 +142,7 @@ static ssize_t show_input(struct device *dev,
 	struct rockchip_temp *data = dev_get_drvdata(dev);
 	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
 
-	temp = data->ops.read_sensor(attr->index);
+	temp = data->ops.read_sensor(attr->index, 0);
 
 	return sprintf(buf, "%d\n", temp);
 }
@@ -346,7 +346,7 @@ struct attribute *rockchip_temp_attributes[] = {
 	&sensor_dev_attr_temp3_min_alarm.dev_attr.attr,
 	&sensor_dev_attr_temp3_max_alarm.dev_attr.attr,
 
-	
+
 	NULL
 };
 
@@ -355,15 +355,39 @@ static const struct attribute_group rockchip_temp_group = {
 	.is_visible = rockchip_attrs_visible,
 };
 
+static const struct of_device_id rockchip_temp_match[] = {
+	{
+		.compatible = "rockchip,tsadc",
+		.data = (void *)RK3288_TSADC,
+	},
+	{
+		.compatible = "rockchip,rk1108-tsadc",
+		.data = (void *)RK1108_TSADC,
+	},
+	{
+		.compatible = "rockchip,rk322x-tsadc",
+		.data = (void *)RK322X_TSADC,
+	},
+	{ /* end */ },
+};
+
 static int rockchip_temp_probe(struct platform_device *pdev)
 {
 	struct rockchip_temp *data;
+	const struct of_device_id *match;
 	int err;
 	printk("%s,line=%d\n", __func__,__LINE__);
+
+	match = of_match_node(rockchip_temp_match, pdev->dev.of_node);
+	if (!match)
+		return -ENXIO;
 
 	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
+
+	data->tsadc_type = (int)match->data;
+
 	data->pdev = pdev;
 	mutex_init(&data->lock);
 
@@ -425,13 +449,6 @@ static int rockchip_temp_resume(struct platform_device *pdev)
 
 	return 0;
 }
-
-#ifdef CONFIG_OF
-static const struct of_device_id rockchip_temp_match[] = {
-	{ .compatible = "rockchip,tsadc" },
-	{},
-};
-#endif
 
 static struct platform_driver rockchip_temp_driver = {
 	.driver = {

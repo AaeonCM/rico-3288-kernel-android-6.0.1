@@ -168,7 +168,7 @@ static struct dwc_otg_driver_module_params dwc_otg_module_params = {
 	.host_rx_fifo_size = -1,
 	.host_nperio_tx_fifo_size = -1,
 	.host_perio_tx_fifo_size = -1,
-	.max_transfer_size = -1,
+	.max_transfer_size = 131072,
 	.max_packet_count = -1,
 	.host_channels = -1,
 	.dev_endpoints = -1,
@@ -200,7 +200,7 @@ static struct dwc_otg_driver_module_params dwc_otg_module_params = {
 			     /* 15 */
 			     },
 	.thr_ctl = -1,
-	.tx_thr_length = -1,
+	.tx_thr_length = 16,
 	.rx_thr_length = -1,
 	.pti_enable = -1,
 	.mpi_enable = -1,
@@ -351,13 +351,21 @@ extern void dwc_otg_hub_disconnect_device(struct usb_hub *hub);
 void dwc_otg_force_host(dwc_otg_core_if_t *core_if)
 {
 	dwc_otg_device_t *otg_dev = core_if->otg_dev;
+	struct dwc_otg_platform_data *pdata = otg_dev->pldata;
 	dctl_data_t dctl = {.d32 = 0 };
 	unsigned long flags;
 
 	if (core_if->op_state == A_HOST) {
-		printk("dwc_otg_force_host,already in A_HOST mode,everest\n");
+		dev_info(pdata->dev,
+			 "dwc_otg_force_host,already in A_HOST mode,everest\n");
+		return;
+	} else if (pdata->get_status(USB_STATUS_BVABLID) &&
+		   core_if->pmic_vbus) {
+		dev_info(pdata->dev,
+			 "Please disconnect the USB cable first, and try again!\n");
 		return;
 	}
+
 	core_if->op_state = A_HOST;
 
 	cancel_delayed_work(&otg_dev->pcd->check_vbus_work);
@@ -1095,6 +1103,10 @@ static int host20_driver_probe(struct platform_device *_dev)
 		dwc_otg_device->common_irq_installed = 1;
 	}
 
+	/* Indicates need to force a host channel halt */
+	dwc_otg_device->core_if->hc_halt_quirk =
+		of_property_read_bool(node, "rockchip,hc-halt-quirk");
+
 	/*
 	 * Initialize the DWC_otg core.
 	 * In order to reduce the time of initialization,
@@ -1111,6 +1123,9 @@ static int host20_driver_probe(struct platform_device *_dev)
 		dwc_otg_device->hcd = NULL;
 		goto fail;
 	}
+
+	/* Initialize last_id */
+	dwc_otg_device->last_id = -1;
 
 	clk_set_rate(pldata->phyclk_480m, 480000000);
 	/*
@@ -1307,6 +1322,14 @@ static const struct of_device_id usb20_otg_of_match[] = {
 	 .compatible = "rockchip,rk3126_usb20_otg",
 	 .data = &usb20otg_pdata_rk3126,
 	 },
+	 {
+	 .compatible = "rockchip,rk322x_usb20_otg",
+	 .data = &usb20otg_pdata_rk322x,
+	 },
+	 {
+	 .compatible = "rockchip,rk1108_usb20_otg",
+	 .data = &usb20otg_pdata_rk1108,
+	 },
 #endif
 #ifdef CONFIG_ARM64
 	{
@@ -1451,6 +1474,16 @@ static int otg20_driver_probe(struct platform_device *_dev)
 		goto fail;
 	}
 
+	dwc_otg_device->core_if->high_bandwidth_en = of_property_read_bool(node,
+						"rockchip,high-bandwidth");
+
+	/*
+	 * If support high bandwidth endpoint, use 'Dedicated FIFO Mode
+	 * with Thresholding', and enable thresholding for isochronous IN
+	 * endpoints. Note: Thresholding is supported only in device mode.
+	 */
+	if (dwc_otg_device->core_if->high_bandwidth_en)
+		dwc_otg_module_params.thr_ctl = 2;
 	/*
 	 * Validate parameter values.
 	 */
@@ -1501,6 +1534,28 @@ static int otg20_driver_probe(struct platform_device *_dev)
 	of_property_read_u32(node, "rockchip,usb-mode", &val);
 	dwc_otg_device->core_if->usb_mode = val;
 
+	/* usb early detect */
+	if (of_property_read_u32(node, "rockchip,usb-early-detect", &val))
+		dwc_otg_device->core_if->usb_early_detect = 8;
+	else
+		dwc_otg_device->core_if->usb_early_detect = val;
+
+	/* Indicate usb vbus get from pmic (e.g. rk81x) */
+	dwc_otg_device->core_if->pmic_vbus = of_property_read_bool(node,
+						"rockchip,usb-pmic-vbus");
+	/* usb pd off support */
+	dwc_otg_device->core_if->usb_pd_off =
+		of_property_read_bool(node, "rockchip,usb-pd-off");
+
+	/* Indicates need to delay enable device in ep nak interrupt */
+	dwc_otg_device->core_if->delay_en_diepint_nak_quirk =
+		of_property_read_bool(node,
+				      "rockchip,delay-en-diepint-nak-quirk");
+
+	/* Indicates need to force a host channel halt */
+	dwc_otg_device->core_if->hc_halt_quirk =
+		of_property_read_bool(node, "rockchip,hc-halt-quirk");
+
 #ifndef DWC_HOST_ONLY
 	/*
 	 * Initialize the PCD
@@ -1523,6 +1578,9 @@ static int otg20_driver_probe(struct platform_device *_dev)
 		goto fail;
 	}
 #endif
+	/* Initialize last_id */
+	dwc_otg_device->last_id = -1;
+
 	/*
 	 * Enable the global interrupt after all the interrupt
 	 * handlers are installed if there is no ADP support else
@@ -1563,6 +1621,9 @@ static int dwc_otg_pm_suspend(struct device *dev)
 
 	dev_dbg(dev, "dwc_otg PM suspend\n");
 
+	if (dwc_otg_device->core_if->usb_pd_off)
+		cancel_delayed_work(&dwc_otg_device->pcd->check_id_work);
+
 	if (dwc_otg_device->core_if->op_state == B_PERIPHERAL)
 		return 0;
 
@@ -1580,6 +1641,11 @@ static int dwc_otg_pm_resume(struct device *dev)
 	dwc_otg_device = dev_get_platdata(dev);
 
 	dev_dbg(dev, "dwc_otg PM resume\n");
+
+	if (dwc_otg_device->core_if->usb_pd_off) {
+		dwc_otg_device->last_id = -1;
+		schedule_delayed_work(&dwc_otg_device->pcd->check_id_work, HZ);
+	}
 
 	if (dwc_otg_device->core_if->op_state == B_PERIPHERAL)
 		return 0;
@@ -1618,8 +1684,12 @@ static struct platform_driver dwc_otg_driver = {
 void rk_usb_power_up(void)
 {
 	struct dwc_otg_platform_data *pldata_otg;
+#ifdef CONFIG_USB20_HOST
 	struct dwc_otg_platform_data *pldata_host;
+#endif
+#ifdef CONFIG_USB_EHCI_RK
 	struct rkehci_platform_data *pldata_ehci;
+#endif
 
 	if (cpu_is_rk3288()) {
 #ifdef CONFIG_RK_USB_UART
@@ -1672,8 +1742,12 @@ void rk_usb_power_up(void)
 void rk_usb_power_down(void)
 {
 	struct dwc_otg_platform_data *pldata_otg;
+#ifdef CONFIG_USB20_HOST
 	struct dwc_otg_platform_data *pldata_host;
+#endif
+#ifdef CONFIG_USB_EHCI_RK
 	struct rkehci_platform_data *pldata_ehci;
+#endif
 
 	if (cpu_is_rk3288()) {
 #ifdef CONFIG_RK_USB_UART

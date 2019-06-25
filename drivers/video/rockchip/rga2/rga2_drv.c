@@ -95,11 +95,11 @@ struct rga2_drvdata_t {
 	struct clk *aclk_rga2;
 	struct clk *hclk_rga2;
 	struct clk *pd_rga2;
-    struct clk *rga2;
+	struct clk *clk_rga2;
 
-    #if defined(CONFIG_ION_ROCKCHIP)
-    struct ion_client * ion_client;
-    #endif
+#if defined(CONFIG_ION_ROCKCHIP)
+	struct ion_client * ion_client;
+#endif
 };
 
 struct rga2_drvdata_t *rga2_drvdata;
@@ -136,11 +136,11 @@ static void print_info(struct rga2_req *req)
 {
     printk("render_mode=%d bitblt_mode=%d rotate_mode=%.8x\n",
             req->render_mode, req->bitblt_mode, req->rotate_mode);
-    printk("src : y=%.llx uv=%.llx v=%.llx format=%d aw=%d ah=%d vw=%d vh=%d xoff=%d yoff=%d \n",
+    printk("src : y=%.lx uv=%.lx v=%.lx format=%d aw=%d ah=%d vw=%d vh=%d xoff=%d yoff=%d \n",
             req->src.yrgb_addr, req->src.uv_addr, req->src.v_addr, req->src.format,
             req->src.act_w, req->src.act_h, req->src.vir_w, req->src.vir_h,
             req->src.x_offset, req->src.y_offset);
-    printk("dst : y=%llx uv=%llx v=%llx format=%d aw=%d ah=%d vw=%d vh=%d xoff=%d yoff=%d \n",
+    printk("dst : y=%lx uv=%lx v=%lx format=%d aw=%d ah=%d vw=%d vh=%d xoff=%d yoff=%d \n",
             req->dst.yrgb_addr, req->dst.uv_addr, req->dst.v_addr, req->dst.format,
             req->dst.act_w, req->dst.act_h, req->dst.vir_w, req->dst.vir_h,
             req->dst.x_offset, req->dst.y_offset);
@@ -231,11 +231,14 @@ static void rga2_power_on(void)
 	}
 	if (rga2_service.enable)
 		return;
-
-    clk_prepare_enable(rga2_drvdata->rga2);
-	clk_prepare_enable(rga2_drvdata->aclk_rga2);
-	clk_prepare_enable(rga2_drvdata->hclk_rga2);
-	clk_prepare_enable(rga2_drvdata->pd_rga2);
+	if (!IS_ERR(rga2_drvdata->clk_rga2))
+		clk_prepare_enable(rga2_drvdata->clk_rga2);
+	if (!IS_ERR(rga2_drvdata->aclk_rga2))
+		clk_prepare_enable(rga2_drvdata->aclk_rga2);
+	if (!IS_ERR(rga2_drvdata->hclk_rga2))
+		clk_prepare_enable(rga2_drvdata->hclk_rga2);
+	if (!IS_ERR(rga2_drvdata->pd_rga2))
+		clk_prepare_enable(rga2_drvdata->pd_rga2);
 	wake_lock(&rga2_drvdata->wake_lock);
 	rga2_service.enable = true;
 }
@@ -257,12 +260,16 @@ static void rga2_power_off(void)
 		rga2_dump();
 	}
 
-    clk_disable_unprepare(rga2_drvdata->rga2);
-    clk_disable_unprepare(rga2_drvdata->pd_rga2);
-	clk_disable_unprepare(rga2_drvdata->aclk_rga2);
-	clk_disable_unprepare(rga2_drvdata->hclk_rga2);
+	if (!IS_ERR(rga2_drvdata->pd_rga2))
+		clk_disable_unprepare(rga2_drvdata->pd_rga2);
+	if (!IS_ERR(rga2_drvdata->clk_rga2))
+		clk_disable_unprepare(rga2_drvdata->clk_rga2);
+	if (!IS_ERR(rga2_drvdata->aclk_rga2))
+		clk_disable_unprepare(rga2_drvdata->aclk_rga2);
+	if (!IS_ERR(rga2_drvdata->hclk_rga2))
+		clk_disable_unprepare(rga2_drvdata->hclk_rga2);
 	wake_unlock(&rga2_drvdata->wake_lock);
-    first_RGA2_proc = 0;
+	first_RGA2_proc = 0;
 	rga2_service.enable = false;
 }
 
@@ -624,6 +631,12 @@ static int rga2_convert_dma_buf(struct rga2_req *req)
 	ion_phys_addr_t phy_addr;
 	size_t len;
     int ret;
+    uint32_t src_vir_w, dst_vir_w;
+
+   
+ 
+    src_vir_w = req->src.vir_w;
+    dst_vir_w = req->dst.vir_w;
 
     req->sg_src0 = NULL;
     req->sg_src1 = NULL;
@@ -640,21 +653,21 @@ static int rga2_convert_dma_buf(struct rga2_req *req)
         if (req->mmu_info.src0_mmu_flag) {
             req->sg_src0 = ion_sg_table(rga2_drvdata->ion_client, hdl);
             req->src.yrgb_addr = req->src.uv_addr;
-            req->src.uv_addr = req->src.yrgb_addr + (req->src.vir_w * req->src.vir_h);
-            req->src.v_addr = req->src.uv_addr + (req->src.vir_w * req->src.vir_h)/4;
+            req->src.uv_addr = req->src.yrgb_addr + (src_vir_w * req->src.vir_h);
+            req->src.v_addr = req->src.uv_addr + (src_vir_w * req->src.vir_h)/4;
         }
         else {
             ion_phys(rga2_drvdata->ion_client, hdl, &phy_addr, &len);
             req->src.yrgb_addr = phy_addr;
-            req->src.uv_addr = req->src.yrgb_addr + (req->src.vir_w * req->src.vir_h);
-            req->src.v_addr = req->src.uv_addr + (req->src.vir_w * req->src.vir_h)/4;
+            req->src.uv_addr = req->src.yrgb_addr + (src_vir_w * req->src.vir_h);
+            req->src.v_addr = req->src.uv_addr + (src_vir_w * req->src.vir_h)/4;
         }
         ion_free(rga2_drvdata->ion_client, hdl);
     }
     else {
         req->src.yrgb_addr = req->src.uv_addr;
-        req->src.uv_addr = req->src.yrgb_addr + (req->src.vir_w * req->src.vir_h);
-        req->src.v_addr = req->src.uv_addr + (req->src.vir_w * req->src.vir_h)/4;
+        req->src.uv_addr = req->src.yrgb_addr + (src_vir_w * req->src.vir_h);
+        req->src.v_addr = req->src.uv_addr + (src_vir_w * req->src.vir_h)/4;
     }
 
     if((int)req->dst.yrgb_addr > 0) {
@@ -667,21 +680,21 @@ static int rga2_convert_dma_buf(struct rga2_req *req)
         if (req->mmu_info.dst_mmu_flag) {
             req->sg_dst = ion_sg_table(rga2_drvdata->ion_client, hdl);
             req->dst.yrgb_addr = req->dst.uv_addr;
-            req->dst.uv_addr = req->dst.yrgb_addr + (req->dst.vir_w * req->dst.vir_h);
-            req->dst.v_addr = req->dst.uv_addr + (req->dst.vir_w * req->dst.vir_h)/4;
+            req->dst.uv_addr = req->dst.yrgb_addr + (dst_vir_w * req->dst.vir_h);
+            req->dst.v_addr = req->dst.uv_addr + (dst_vir_w * req->dst.vir_h)/4;
         }
         else {
             ion_phys(rga2_drvdata->ion_client, hdl, &phy_addr, &len);
             req->dst.yrgb_addr = phy_addr;
-            req->dst.uv_addr = req->dst.yrgb_addr + (req->dst.vir_w * req->dst.vir_h);
-            req->dst.v_addr = req->dst.uv_addr + (req->dst.vir_w * req->dst.vir_h)/4;
+            req->dst.uv_addr = req->dst.yrgb_addr + (dst_vir_w * req->dst.vir_h);
+            req->dst.v_addr = req->dst.uv_addr + (dst_vir_w * req->dst.vir_h)/4;
         }
         ion_free(rga2_drvdata->ion_client, hdl);
     }
     else {
         req->dst.yrgb_addr = req->dst.uv_addr;
-        req->dst.uv_addr = req->dst.yrgb_addr + (req->dst.vir_w * req->dst.vir_h);
-        req->dst.v_addr = req->dst.uv_addr + (req->dst.vir_w * req->dst.vir_h)/4;
+        req->dst.uv_addr = req->dst.yrgb_addr + (dst_vir_w * req->dst.vir_h);
+        req->dst.v_addr = req->dst.uv_addr + (dst_vir_w * req->dst.vir_h)/4;
     }
 
     if((int)req->src1.yrgb_addr > 0) {
@@ -693,22 +706,22 @@ static int rga2_convert_dma_buf(struct rga2_req *req)
         }
         if (req->mmu_info.dst_mmu_flag) {
             req->sg_src1 = ion_sg_table(rga2_drvdata->ion_client, hdl);
-            req->src1.yrgb_addr = 0;
-            req->src1.uv_addr = req->dst.yrgb_addr + (req->dst.vir_w * req->dst.vir_h);
-            req->src1.v_addr = req->dst.uv_addr + (req->dst.vir_w * req->dst.vir_h)/4;
+            req->src1.yrgb_addr = req->src1.uv_addr;
+            req->src1.uv_addr = req->src1.yrgb_addr + (req->src1.vir_w * req->src1.vir_h);
+            req->src1.v_addr = req->src1.uv_addr + (req->src1.vir_w * req->src1.vir_h)/4;
         }
         else {
             ion_phys(rga2_drvdata->ion_client, hdl, &phy_addr, &len);
             req->src1.yrgb_addr = phy_addr;
-            req->src1.uv_addr = req->dst.yrgb_addr + (req->dst.vir_w * req->dst.vir_h);
-            req->src1.v_addr = req->dst.uv_addr + (req->dst.vir_w * req->dst.vir_h)/4;
+            req->src1.uv_addr = req->src1.yrgb_addr + (req->src1.vir_w * req->src1.vir_h);
+            req->src1.v_addr = req->src1.uv_addr + (req->src1.vir_w * req->src1.vir_h)/4;
         }
         ion_free(rga2_drvdata->ion_client, hdl);
     }
     else {
-        req->src1.yrgb_addr = req->dst.uv_addr;
-        req->src1.uv_addr = req->dst.yrgb_addr + (req->dst.vir_w * req->dst.vir_h);
-        req->src1.v_addr = req->dst.uv_addr + (req->dst.vir_w * req->dst.vir_h)/4;
+        req->src1.yrgb_addr = req->src1.uv_addr;
+        req->src1.uv_addr = req->src1.yrgb_addr + (req->src1.vir_w * req->src1.vir_h);
+        req->src1.v_addr = req->src1.uv_addr + (req->src1.vir_w * req->src1.vir_h)/4;
     }
 
     return 0;
@@ -1169,6 +1182,7 @@ static int rga2_release(struct inode *inode, struct file *file)
 static irqreturn_t rga2_irq_thread(int irq, void *dev_id)
 {
 	mutex_lock(&rga2_service.lock);
+
 	if (rga2_service.enable) {
 		rga2_del_running_list();
 		rga2_try_set_reg();
@@ -1234,10 +1248,10 @@ static int rga2_drv_probe(struct platform_device *pdev)
 	wake_lock_init(&data->wake_lock, WAKE_LOCK_SUSPEND, "rga");
 
 	//data->pd_rga2 = clk_get(NULL, "pd_rga");
-    data->rga2 = devm_clk_get(&pdev->dev, "clk_rga");
-    data->pd_rga2 = devm_clk_get(&pdev->dev, "pd_rga");
+	data->clk_rga2 = devm_clk_get(&pdev->dev, "clk_rga");
+	data->pd_rga2 = devm_clk_get(&pdev->dev, "pd_rga");
 	data->aclk_rga2 = devm_clk_get(&pdev->dev, "aclk_rga");
-    data->hclk_rga2 = devm_clk_get(&pdev->dev, "hclk_rga");
+	data->hclk_rga2 = devm_clk_get(&pdev->dev, "hclk_rga");
 
 	/* map the registers */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -1290,9 +1304,7 @@ static int rga2_drv_probe(struct platform_device *pdev)
 	return 0;
 
 err_misc_register:
-	free_irq(data->irq, pdev);
 err_irq:
-	iounmap(data->rga_base);
 err_ioremap:
 	wake_lock_destroy(&data->wake_lock);
 	//kfree(data);
@@ -1307,16 +1319,6 @@ static int rga2_drv_remove(struct platform_device *pdev)
 
 	wake_lock_destroy(&data->wake_lock);
 	misc_deregister(&(data->miscdev));
-	free_irq(data->irq, &data->miscdev);
-	iounmap((void __iomem *)(data->rga_base));
-
-	//clk_put(data->pd_rga2);
-	devm_clk_put(&pdev->dev, data->rga2);
-    devm_clk_put(&pdev->dev, data->pd_rga2);
-	devm_clk_put(&pdev->dev, data->aclk_rga2);
-	devm_clk_put(&pdev->dev, data->hclk_rga2);
-
-	kfree(data);
 	return 0;
 }
 
@@ -1399,12 +1401,13 @@ void rga2_test_0(void)
     struct rga2_req req;
     rga2_session session;
     unsigned int *src, *dst;
-    uint32_t i, j;
-    uint8_t *p;
-    uint8_t t;
-    uint32_t *dst0, *dst1, *dst2;
 
-    struct fb_info *fb;
+
+    //uint8_t *p;
+    //uint8_t t;
+    //uint32_t *dst0, *dst1;
+
+    //struct fb_info *fb;
 
     session.pid	= current->pid;
 	INIT_LIST_HEAD(&session.waiting);
@@ -1427,26 +1430,16 @@ void rga2_test_0(void)
     printk("************ RGA2_TEST ************\n");
     printk("********************************\n\n");
 
+    #if 1
     memset(src, 0x80, 800*480*4);
-    memset(dst, 0x0, 800*480*4);
+    memset(dst, 0xcc, 800*480*4);
 
-    //dmac_flush_range(&src, &src[800*480*4]);
-    //outer_flush_range(virt_to_phys(&src),virt_to_phys(&src[800*480*4]));
+    dmac_flush_range(src, &src[800*480]);
+    outer_flush_range(virt_to_phys(src),virt_to_phys(&src[800*480]));
 
-
-    #if 0
-    memset(src_buf, 0x80, 800*480*4);
-    memset(dst_buf, 0xcc, 800*480*4);
-
-    dmac_flush_range(&dst_buf[0], &dst_buf[800*480]);
-    outer_flush_range(virt_to_phys(&dst_buf[0]),virt_to_phys(&dst_buf[800*480]));
+    dmac_flush_range(dst, &dst[800*480]);
+    outer_flush_range(virt_to_phys(dst),virt_to_phys(&dst[800*480]));
     #endif
-
-    dst0 = &dst;
-
-    i = j = 0;
-
-
 
     #if 0
     req.pat.act_w = 16;
@@ -1457,16 +1450,43 @@ void rga2_test_0(void)
     req.render_mode = 0;
     rga2_blit_sync(&session, &req);
     #endif
-
-    req.src.act_w  = 320;
+    {
+    uint32_t i, j;
+    uint8_t *sp;
+    sp = (uint8_t *)src;
+    for(j=0; j<240; j++)
+    {
+        sp = (uint8_t *)src + j*320*10/8;
+        for(i=0; i<320; i++)
+        {
+            if ((i&3)== 0) {
+                sp[i*5/4] = 0;
+                sp[i*5/4+1] = 0x1;
+            }
+            else if ((i&3) == 1) {
+                sp[i*5/4+1] = 0x4;
+            }
+            else if ((i&3) == 2) {
+                sp[i*5/4+1] = 0x10;
+            }
+            else if ((i&3) == 3) {
+                sp[i*5/4+1] = 0x40;
+            }
+        }
+    }
+    sp = (uint8_t *)src;
+    for(j=0; j<100; j++)
+        printk("src %.2x\n", sp[j]);
+    }
+    req.src.act_w = 320;
     req.src.act_h = 240;
 
-    req.src.vir_w  = 320;
+    req.src.vir_w = 320;
     req.src.vir_h = 240;
     req.src.yrgb_addr = 0;//(uint32_t)virt_to_phys(src);
     req.src.uv_addr = (unsigned long)virt_to_phys(src);
     req.src.v_addr = 0;
-    req.src.format = RGA2_FORMAT_RGBA_8888;
+    req.src.format = RGA2_FORMAT_YCbCr_420_SP_10B;
 
     req.dst.act_w  = 320;
     req.dst.act_h = 240;
@@ -1478,7 +1498,7 @@ void rga2_test_0(void)
 
     req.dst.yrgb_addr = 0;//((uint32_t)virt_to_phys(dst));
     req.dst.uv_addr = (unsigned long)virt_to_phys(dst);
-    req.dst.format = RGA2_FORMAT_RGBA_8888;
+    req.dst.format = RGA2_FORMAT_YCbCr_420_SP;
 
     //dst = dst0;
 
@@ -1499,11 +1519,28 @@ void rga2_test_0(void)
     //printk("src = %.8x\n", req.src.uv_addr);
     //printk("dst = %.8x\n", req.dst.yrgb_addr);
 
+
     rga2_blit_sync(&session, &req);
 
-    for(j=0; j<100; j++) {
-        printk("%.8x\n", dst[j]);
+    #if 0
+    uint32_t j;
+    for(j=0; j<320*240*10/8; j++) {
+        if (src[j] != dst[j]) {
+            printk("error value dst not equal src j %d, s %.2x d %.2x\n", j, src[j], dst[j]);
+        }
     }
+    #endif
+
+    #if 1
+    {
+    uint32_t j;
+    uint8_t *dp = (uint8_t *)dst;
+    for (j=0; j<100; j++) {
+        printk("%d %.2x\n", j, dp[j]);
+
+    }
+    }
+    #endif
 
     if(src)
         kfree(src);

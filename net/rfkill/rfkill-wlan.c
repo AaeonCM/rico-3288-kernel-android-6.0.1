@@ -141,9 +141,15 @@ int get_wifi_chip_type(void)
     } else if (strcmp(wifi_chip_type_string, "rtl8189es") == 0) {
         type = WIFI_RTL8189ES;
     } else if (strcmp(wifi_chip_type_string, "rtl8812au") == 0) {
-        type = WIFI_RTL8812AU;                        
+        type = WIFI_RTL8812AU;                       
+    } else if (strcmp(wifi_chip_type_string, "rtl8189fs") == 0) {
+        type = WIFI_RTL8189FS;
+    } else if (strcmp(wifi_chip_type_string, "rtl8188fu") == 0) {
+        type = WIFI_RTL8188FU;
     } else if (strcmp(wifi_chip_type_string, "esp8089") == 0) {
         type = WIFI_ESP8089;
+    } else if (strcmp(wifi_chip_type_string, "ssv6051") == 0) {
+	type = WIFI_SSV6051;
     } else {
         type = WIFI_AP6210;
     }
@@ -667,7 +673,6 @@ static int rockchip_wifi_voltage_select(void)
         LOG("%s: rfkill-wlan driver has not Successful initialized\n", __func__);
         return -1;
     }
-
     voltage = mrfkill->pdata->sdio_vol;
     if (cpu_is_rk3288()) {
 	    if (voltage > 2700 && voltage < 3500) {
@@ -680,7 +685,7 @@ static int rockchip_wifi_voltage_select(void)
 	        LOG("%s: unsupport wifi & sdio reference voltage!\n", __func__);
 	        return -1;
 	    }
-	} else if(cpu_is_rk3036() || cpu_is_rk312x()) {
+	} else if (cpu_is_rk3036() || cpu_is_rk312x() || cpu_is_rk322x()) {
 	} else { // rk3368
 #ifdef CONFIG_MFD_SYSCON
 	    if (voltage > 2700 && voltage < 3500) {

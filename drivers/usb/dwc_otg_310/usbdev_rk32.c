@@ -172,15 +172,18 @@ static void dwc_otg_uart_mode(void *pdata, int enter_usb_uart_mode)
 static void usb20otg_power_enable(int enable)
 {
 	if (0 == enable) {
-		rk_battery_charger_detect_cb(USB_OTG_POWER_OFF);
 		/* disable otg_drv power */
 		if (gpio_is_valid(control_usb->otg_gpios->gpio))
 			gpio_set_value(control_usb->otg_gpios->gpio, 0);
+
+		rk_battery_charger_detect_cb(USB_OTG_POWER_OFF);
 	} else if (1 == enable) {
-		rk_battery_charger_detect_cb(USB_OTG_POWER_ON);
 		/* enable otg_drv power */
 		if (gpio_is_valid(control_usb->otg_gpios->gpio))
 			gpio_set_value(control_usb->otg_gpios->gpio, 1);
+
+		if (!usb20otg_get_status(USB_STATUS_BVABLID))
+			rk_battery_charger_detect_cb(USB_OTG_POWER_ON);
 	}
 }
 
@@ -475,7 +478,11 @@ struct rkehci_platform_data rkehci1_pdata_rk3288 = {
 #ifdef CONFIG_USB_EHCI_RK
 static void rk_ehci_hw_init(void)
 {
-	/* usb phy config init */
+	/* usb phy config init
+	 * set common_on = 0, in suspend mode,
+	 * host0 PLL blocks remain powered.
+	 */
+	control_usb->grf_uoc1_base->CON0 = (1 << 16) | 0;
 
 	/* DRV_VBUS GPIO init */
 	if (gpio_is_valid(control_usb->host_gpios->gpio)) {

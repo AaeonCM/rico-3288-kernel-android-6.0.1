@@ -28,6 +28,7 @@
 	https://bugzilla.stlinux.com/
 *******************************************************************************/
 
+#include <linux/gpio.h>
 #include <linux/clk.h>
 #include <linux/kernel.h>
 #include <linux/interrupt.h>
@@ -682,6 +683,8 @@ static void stmmac_release_ptp(struct stmmac_priv *priv)
 	stmmac_ptp_unregister(priv);
 }
 
+static int g_bmcr = 0;
+
 /**
  * stmmac_adjust_link
  * @dev: net device structure
@@ -694,6 +697,7 @@ static void stmmac_adjust_link(struct net_device *dev)
 	unsigned long flags;
 	int new_state = 0;
 	unsigned int fc = priv->flow_ctrl, pause_time = priv->pause;
+	struct bsp_priv *bsp_priv = priv->plat->bsp_priv;
 
 	if (phydev == NULL)
 		return;
@@ -702,6 +706,27 @@ static void stmmac_adjust_link(struct net_device *dev)
 	    phydev->addr, phydev->link);
 
 	spin_lock_irqsave(&priv->lock, flags);
+
+	bsp_priv->link = phydev->link;
+	if ((bsp_priv->chip == RK322X_GMAC) && (bsp_priv->internal_phy) &&
+	    (phydev->link != priv->oldlink)) {
+		if (phydev->link) {
+			if (gpio_is_valid(bsp_priv->link_io))
+				/* link LED on */
+				gpio_direction_output(bsp_priv->link_io,
+						      bsp_priv->link_io_level);
+		} else {
+			if (priv->speed == 10) {
+				/* restore MII_BMCR */
+				phy_write(phydev, MII_BMCR, g_bmcr);
+			}
+
+			if (gpio_is_valid(bsp_priv->link_io))
+				/* link LED off */
+				gpio_direction_output(bsp_priv->link_io,
+						      !bsp_priv->link_io_level);
+		}
+	}
 
 	if (phydev->link) {
 		u32 ctrl = readl(priv->ioaddr + MAC_CTRL_REG);
@@ -742,6 +767,27 @@ static void stmmac_adjust_link(struct net_device *dev)
 					ctrl &= ~priv->hw->link.port;
 				}
 				stmmac_hw_fix_mac_speed(priv);
+
+				if ((bsp_priv->chip == RK322X_GMAC) &&
+				    (bsp_priv->internal_phy) &&
+				    (phydev->speed == 10)) {
+					int an_expan;
+
+					an_expan = phy_read(phydev,
+							    MII_EXPANSION);
+					/* link partner does not have */
+					/* auto-negotiation ability, setting */
+					/* PHY to 10M full-duplex by force */
+					if (!(an_expan & 0x1) &&
+					    (phydev->speed == 10)) {
+						g_bmcr = phy_read(phydev,
+								  MII_BMCR);
+						pr_info("10BT-no auto-neg\n");
+						phy_write(phydev, MII_BMCR,
+							  0x100);
+					}
+				}
+
 				break;
 			default:
 				if (netif_msg_link(priv))
@@ -887,6 +933,73 @@ int gmac_remove_sysfs(struct phy_device * phy_dev) {
 	return 0;
 }
 
+#define NET_FLASH_TIME                  (HZ/10) /* 100 ms */
+#define NET_FLASH_PAUSE                (HZ/10) /* 100 ms */
+
+static void
+gmac_set_network_leds(struct bsp_priv *bsp_priv, int active)
+{
+	if ((bsp_priv->internal_phy) && (gpio_is_valid(bsp_priv->led_io))) {
+		if (active) {
+			/* LED on */
+			gpio_set_value(bsp_priv->led_io,
+					      bsp_priv->led_io_level);
+		} else {
+			/* LED off */
+			gpio_set_value(bsp_priv->led_io,
+					      !bsp_priv->led_io_level);
+		}
+	}
+}
+
+static void macphy_led_work(struct work_struct *work)
+{
+	struct bsp_priv *bsp_priv =
+		container_of(work, struct bsp_priv, led_work.work);
+	unsigned long flags;
+
+	spin_lock_irqsave(&bsp_priv->led_lock, flags);
+
+	if (bsp_priv->led_active &&
+	    time_after(jiffies, bsp_priv->led_next_time)) {
+		/* Set the earliest time we may set the LED */
+		bsp_priv->led_next_time = jiffies + NET_FLASH_PAUSE;
+		bsp_priv->led_active = 0;
+		spin_unlock_irqrestore(&bsp_priv->led_lock, flags);
+		gmac_set_network_leds(bsp_priv, 0);
+	} else {
+		spin_unlock_irqrestore(&bsp_priv->led_lock, flags);
+	}
+}
+
+static int rk322x_phy_adjust(struct phy_device *phydev) {
+	// disable auto MDIX
+	int resv1 = phy_read(phydev, 17);
+	printk("resv1 = %x\n", resv1);
+	phy_write(phydev, 17, resv1 & 0x3F);
+
+	// adjust TXAMP
+	phy_write(phydev,20,0x400);
+	phy_write(phydev,20,0x0);
+	phy_write(phydev,20,0x400);
+	phy_write(phydev,23,0xb);    // default is 0x8, set to 0xb
+	phy_write(phydev,20,0x4418);
+//	phy_write(phydev,20,0x8700);
+	return 0;
+}
+
+static void phy_resume_work(struct work_struct *work)
+{
+	struct bsp_priv *bsp_priv =
+		container_of(work, struct bsp_priv, resume_work.work);
+
+	if (bsp_priv->link == 1) {
+		if (gpio_is_valid(bsp_priv->link_io))
+			/* link LED on */
+			gpio_direction_output(bsp_priv->link_io, bsp_priv->link_io_level);
+	}
+}
+
 /**
  * stmmac_init_phy - PHY initialization
  * @dev: net device structure
@@ -902,6 +1015,7 @@ static int stmmac_init_phy(struct net_device *dev)
 	char phy_id_fmt[MII_BUS_ID_SIZE + 3];
 	char bus_id[MII_BUS_ID_SIZE];
 	int interface = priv->plat->interface;
+	struct bsp_priv *bsp_priv = priv->plat->bsp_priv;
 	priv->oldlink = 0;
 	priv->speed = 0;
 	priv->oldduplex = -1;
@@ -948,6 +1062,22 @@ static int stmmac_init_phy(struct net_device *dev)
 
 	gmac_create_sysfs(phydev);
 
+	if ((bsp_priv->chip == RK322X_GMAC) && (bsp_priv->internal_phy)) {
+		rk322x_phy_adjust(phydev);
+		/* LED off */
+		gpio_direction_output(bsp_priv->led_io,
+				      !bsp_priv->led_io_level);
+	}
+
+	INIT_DELAYED_WORK(&bsp_priv->led_work, macphy_led_work);
+	INIT_DELAYED_WORK(&bsp_priv->resume_work, phy_resume_work);
+
+	/* Initialize next time the led can flash */
+	bsp_priv->led_next_time = jiffies;
+	bsp_priv->led_active = 0;
+	spin_lock_init(&bsp_priv->led_lock);
+
+        bsp_priv->link = 0;
 	return 0;
 }
 
@@ -1911,6 +2041,25 @@ static netdev_tx_t stmmac_xmit(struct sk_buff *skb, struct net_device *dev)
 	int nfrags = skb_shinfo(skb)->nr_frags;
 	struct dma_desc *desc, *first;
 	unsigned int nopaged_len = skb_headlen(skb);
+	struct bsp_priv *bsp_priv = priv->plat->bsp_priv;
+	unsigned long flags;
+
+	if ((bsp_priv->internal_phy) && (gpio_is_valid(bsp_priv->led_io))) {
+		spin_lock_irqsave(&bsp_priv->led_lock, flags);
+		if (!bsp_priv->led_active &&
+		    time_after(jiffies, bsp_priv->led_next_time)) {
+			/* Set the earliest time we may clear the LED */
+			bsp_priv->led_next_time = jiffies + NET_FLASH_TIME;
+			bsp_priv->led_active = 1;
+			spin_unlock_irqrestore(&bsp_priv->led_lock, flags);
+
+			gmac_set_network_leds(bsp_priv, 1);
+			schedule_delayed_work(&bsp_priv->led_work,
+					      NET_FLASH_TIME + 1);
+		} else {
+			spin_unlock_irqrestore(&bsp_priv->led_lock, flags);
+		}
+	}
 
 	if (unlikely(stmmac_tx_avail(priv) < nfrags + 1)) {
 		if (!netif_queue_stopped(dev)) {
@@ -2122,7 +2271,25 @@ static int stmmac_rx(struct stmmac_priv *priv, int limit)
 	unsigned int next_entry;
 	unsigned int count = 0;
 	int coe = priv->plat->rx_coe;
+	struct bsp_priv *bsp_priv = priv->plat->bsp_priv;
+	unsigned long flags;
 
+	if ((bsp_priv->internal_phy) && (gpio_is_valid(bsp_priv->led_io))) {
+		spin_lock_irqsave(&bsp_priv->led_lock, flags);
+		if (!bsp_priv->led_active &&
+		    time_after(jiffies, bsp_priv->led_next_time)) {
+			/* Set the earliest time we may clear the LED */
+			bsp_priv->led_next_time = jiffies + NET_FLASH_TIME;
+			bsp_priv->led_active = 1;
+			spin_unlock_irqrestore(&bsp_priv->led_lock, flags);
+
+			gmac_set_network_leds(bsp_priv, 1);
+			schedule_delayed_work(&bsp_priv->led_work,
+					      NET_FLASH_TIME+1);
+		} else {
+			spin_unlock_irqrestore(&bsp_priv->led_lock, flags);
+		}
+	}
 #ifdef STMMAC_RX_DEBUG
 	if (netif_msg_hw(priv)) {
 		pr_debug(">>> stmmac_rx: descriptor ring:\n");
@@ -3015,6 +3182,13 @@ int stmmac_resume(struct net_device *ndev)
 
 	if (priv->phydev)
 		phy_start(priv->phydev);
+
+	if ((bsp_priv->chip == RK322X_GMAC) && (bsp_priv->internal_phy)) {
+		rk322x_phy_adjust(priv->phydev);
+	}
+
+	if (bsp_priv && (bsp_priv->chip == RK322X_GMAC) && (bsp_priv->internal_phy))
+		schedule_delayed_work(&bsp_priv->resume_work, 2 * HZ); /* delay 2s */
 
 	return 0;
 }

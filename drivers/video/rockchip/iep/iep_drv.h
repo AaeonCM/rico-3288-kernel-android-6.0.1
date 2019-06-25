@@ -142,10 +142,8 @@ typedef struct iep_service_info {
 
 	struct mutex	    mutex;  // mutex
 
-#ifdef CONFIG_IEP_IOMMU
 	struct ion_client *ion_client;
 	struct device *iommu_dev;
-#endif
 } iep_service_info;
 
 struct iep_reg {
@@ -162,12 +160,9 @@ struct iep_reg {
 	int                 vir_height;
 	int                 layer;
 	unsigned int        format;
-#if defined(CONFIG_IEP_IOMMU)
 	struct list_head    mem_region_list;
-#endif
 };
 
-#if defined(CONFIG_IEP_IOMMU)
 struct iep_mem_region {
 	struct list_head srv_lnk;
 	struct list_head reg_lnk;
@@ -176,7 +171,6 @@ struct iep_mem_region {
 	unsigned long len;
 	struct ion_handle *hdl;
 };
-#endif
 
 #endif
 

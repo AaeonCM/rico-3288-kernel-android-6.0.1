@@ -121,6 +121,7 @@ module_param_named(dbg_level, dbg_enable, int, 0644);
 #define TEST_PRESET		1
 #define TEST_AC_ONLINE		1
 #define TEST_USB_ONLINE		0
+#define TEST_TEMP		220
 
 #define ZERO_ALGOR_THRESD	3800
 #define DISCHRG_ZERO_MODE	1
@@ -208,7 +209,7 @@ struct rk81x_battery {
 	int				psy_status;
 	int				current_avg;
 	int				current_offset;
-
+	int				temperature;
 	uint16_t			voltage;
 	uint16_t			voltage_ocv;
 	uint16_t			relax_voltage;
@@ -1066,6 +1067,54 @@ static int rk81x_bat_get_raw_adc_current(struct rk81x_battery *di)
 	return val;
 }
 
+/*get ntc resistance*/
+static int rk81x_bat_get_ntc_res(struct rk81x_battery *di)
+{
+	u8 buf;
+	int ret, val;
+
+	ret = rk81x_bat_read(di, TS1_ADC_REGL, &buf, 1);
+	if (ret < 0) {
+		dev_err(di->dev, "error reading TS1_ADC_REGL");
+		return ret;
+	}
+
+	val = buf;
+	ret = rk81x_bat_read(di, TS1_ADC_REGH, &buf, 1);
+	if (ret < 0) {
+		dev_err(di->dev, "error reading TS1_ADC_REGH");
+		return ret;
+	}
+
+	val |= buf << 8;
+	val = val * 7; /*reference voltage 2.2V,current 80ua*/
+	DBG("<%s>. ntc_res=%d\n", __func__, val);
+
+	return val;
+}
+
+static void rk81x_bat_update_temp(struct rk81x_battery *di)
+{
+	u32 ntc_size, *ntc_table;
+	int i, res;
+
+	ntc_table = di->pdata->battery_ntc;
+	ntc_size = di->pdata->ntc_size;
+
+	if (ntc_size) {
+		res = rk81x_bat_get_ntc_res(di);
+		if (res < 0)
+			return;
+		for (i = 0; i < ntc_size; i++) {
+			if (res > ntc_table[i])
+				break;
+		}
+		di->temperature = (i + di->pdata->ntc_temp_min) * 10;
+	} else {
+		di->temperature = TEST_TEMP;
+	}
+}
+
 static void rk81x_bat_ioffset_sample_set(struct rk81x_battery *di, int time)
 {
 	u8 ggcon;
@@ -1410,6 +1459,7 @@ static enum power_supply_property rk_battery_props[] = {
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_CAPACITY,
+	POWER_SUPPLY_PROP_TEMP,
 };
 
 static int rk81x_battery_get_property(struct power_supply *psy,
@@ -1451,6 +1501,11 @@ static int rk81x_battery_get_property(struct power_supply *psy,
 		if (di->fg_drv_mode == TEST_POWER_MODE)
 			val->intval = TEST_STATUS;
 
+		break;
+	case POWER_SUPPLY_PROP_TEMP:
+		val->intval = di->temperature;
+		if (di->fg_drv_mode == TEST_POWER_MODE)
+			val->intval = TEST_TEMP;
 		break;
 	default:
 		return -EINVAL;
@@ -1798,20 +1853,11 @@ static enum charger_type rk81x_bat_get_dc_state(struct rk81x_battery *di)
 	if (!gpio_is_valid(di->dc_det_pin))
 		goto out;
 
-	ret = gpio_request(di->dc_det_pin, "rk818_dc_det");
-	if (ret < 0) {
-		pr_err("Failed to request gpio %d with ret:""%d\n",
-		       di->dc_det_pin, ret);
-		goto out;
-	}
-
-	gpio_direction_input(di->dc_det_pin);
 	ret = gpio_get_value(di->dc_det_pin);
 	if (ret == di->dc_det_level)
 		charger_type = DC_CHARGER;
 	else
 		charger_type = NO_CHARGER;
-	gpio_free(di->dc_det_pin);
 out:
 	return charger_type;
 }
@@ -2597,7 +2643,7 @@ static void rk81x_bat_emulator_dischrg(struct rk81x_battery *di)
 	if  (sec_unit > soc_time) {
 		di->dsoc--;
 		di->dischrg_emu_base = get_runtime_sec();
-		di->dischrg_save_sec = 0;
+		di->dischrg_save_sec = sec_unit % soc_time;
 	}
 
 	DBG("<%s> soc_time=%d, sec_unit=%lu\n",
@@ -2633,7 +2679,7 @@ static void rk81x_bat_emulator_chrg(struct rk81x_battery *di)
 	if  (chrg_emu_sec > soc_time) {
 		di->dsoc += plus_soc;
 		di->chrg_emu_base = get_runtime_sec();
-		di->chrg_save_sec = 0;
+		di->chrg_save_sec = chrg_emu_sec % soc_time;
 	}
 
 	DBG("<%s>. soc_time=%d, chrg_emu_sec=%lu, plus_soc=%d\n",
@@ -2662,7 +2708,7 @@ static void rk81x_bat_terminal_chrg(struct rk81x_battery *di)
 	if  (chrg_term_sec > soc_time) {
 		di->dsoc += plus_soc;
 		di->chrg_term_base = get_runtime_sec();
-		di->chrg_save_sec = 0;
+		di->chrg_save_sec = chrg_term_sec % soc_time;
 	}
 	DBG("<%s>. soc_time=%d, chrg_term_sec=%lu, plus_soc=%d\n",
 	    __func__, soc_time, chrg_term_sec, plus_soc);
@@ -2695,7 +2741,8 @@ static void rk81x_bat_normal_dischrg(struct rk81x_battery *di)
 		if (dischrg_normal_sec > soc_time * 3 / 2) {
 			di->dsoc--;
 			di->dischrg_normal_base = get_runtime_sec();
-			di->dischrg_save_sec = 0;
+			di->dischrg_save_sec = dischrg_normal_sec %
+							(soc_time * 3 / 2);
 		}
 		di->discharge_smooth_status = true;
 
@@ -2704,7 +2751,8 @@ static void rk81x_bat_normal_dischrg(struct rk81x_battery *di)
 		if (dischrg_normal_sec > soc_time * 3 / 4) {
 			di->dsoc--;
 			di->dischrg_normal_base = get_runtime_sec();
-			di->dischrg_save_sec = 0;
+			di->dischrg_save_sec = dischrg_normal_sec %
+							(soc_time * 3 / 4);
 		}
 		di->discharge_smooth_status = true;
 
@@ -2861,7 +2909,7 @@ static void rk81x_bat_dbg_dmp_info(struct rk81x_battery *di)
 	   );
 
 	DBG("#######################################################\n"
-	    "voltage = %d, current-avg = %d\n"
+	    "voltage = %d, current-avg = %d, temperature = %d\n"
 	    "fcc = %d, remain_capacity = %d, ocv_volt = %d\n"
 	    "check_ocv = %d, check_soc = %d, bat_res = %d\n"
 	    "display_soc = %d, cpapacity_soc = %d\n"
@@ -2872,7 +2920,7 @@ static void rk81x_bat_dbg_dmp_info(struct rk81x_battery *di)
 	    "emu_dischrg = %lu, power_on_sec = %lu\n"
 	    "mode:%d, save_chrg_sec = %lu, save_dischrg_sec = %lu\n"
 	    "#########################################################\n",
-	    di->voltage, di->current_avg,
+	    di->voltage, di->current_avg, di->temperature,
 	    di->fcc, di->remain_capacity, di->voltage_ocv,
 	    di->est_ocv_vol, di->est_ocv_soc, di->bat_res,
 	    di->dsoc, di->rsoc,
@@ -2974,7 +3022,7 @@ static void rk81x_bat_finish_chrg(struct rk81x_battery *di)
 		if (sec_finish > soc_time) {
 			di->dsoc += plus_soc;
 			di->chrg_finish_base = get_runtime_sec();
-			di->chrg_save_sec = 0;
+			di->chrg_save_sec = sec_finish % soc_time;
 		}
 		DBG("<%s>,CHARGE_FINISH:dsoc<100,dsoc=%d\n"
 		    "soc_time=%d, sec_finish=%lu, plus_soc=%d\n",
@@ -3019,7 +3067,7 @@ static void rk81x_bat_normal_chrg(struct rk81x_battery *di)
 		if  (chrg_normal_sec > unit_sec) {
 			di->dsoc += plus_soc;
 			di->chrg_normal_base = get_runtime_sec();
-			di->chrg_save_sec = 0;
+			di->chrg_save_sec = chrg_normal_sec % unit_sec;
 		}
 		di->charge_smooth_status = true;
 	} else if (di->rsoc > di->dsoc + 1) {
@@ -3029,7 +3077,7 @@ static void rk81x_bat_normal_chrg(struct rk81x_battery *di)
 		if  (chrg_normal_sec > unit_sec) {
 			di->dsoc += plus_soc;
 			di->chrg_normal_base = get_runtime_sec();
-			di->chrg_save_sec = 0;
+			di->chrg_save_sec = chrg_normal_sec % unit_sec;
 		}
 		di->charge_smooth_status = true;
 	} else if (di->rsoc == di->dsoc + 1) {
@@ -3709,6 +3757,7 @@ static void rk81x_battery_work(struct work_struct *work)
 	rk81x_bat_display_smooth(di);
 	rk81x_bat_update_time(di);
 	rk81x_bat_update_info(di);
+	rk81x_bat_update_temp(di);
 	rk81x_bat_rsoc_check(di);
 	rk81x_bat_power_supply_changed(di);
 	rk81x_bat_save_dsoc(di, di->dsoc);
@@ -3839,14 +3888,12 @@ static irqreturn_t rk81x_vbat_lo_irq(int irq, void *bat)
 
 static irqreturn_t rk81x_vbat_plug_in(int irq, void *bat)
 {
-	pr_info("\n------- %s:irq = %d\n", __func__, irq);
 	rk_send_wakeup_key();
 	return IRQ_HANDLED;
 }
 
 static irqreturn_t rk81x_vbat_plug_out(int irq, void  *bat)
 {
-	pr_info("\n-------- %s:irq = %d\n", __func__, irq);
 	rk_send_wakeup_key();
 	return IRQ_HANDLED;
 }
@@ -3864,6 +3911,11 @@ static irqreturn_t rk81x_vbat_charge_ok(int irq, void  *bat)
 static irqreturn_t rk81x_vbat_dc_det(int irq, void *bat)
 {
 	struct rk81x_battery *di = (struct rk81x_battery *)bat;
+
+	if (gpio_get_value(di->dc_det_pin))
+		irq_set_irq_type(irq, IRQF_TRIGGER_LOW);
+	else
+		irq_set_irq_type(irq, IRQF_TRIGGER_HIGH);
 
 	queue_delayed_work(di->wq,
 			   &di->dc_det_check_work,
@@ -3968,6 +4020,7 @@ static void rk81x_bat_dc_det_init(struct rk81x_battery *di,
 	struct device *dev = di->dev;
 	enum of_gpio_flags flags;
 	int ret;
+	unsigned long irq_flags;
 
 	di->dc_det_pin = of_get_named_gpio_flags(np, "dc_det_gpio", 0, &flags);
 	if (di->dc_det_pin == -EPROBE_DEFER) {
@@ -3976,12 +4029,28 @@ static void rk81x_bat_dc_det_init(struct rk81x_battery *di,
 	}
 
 	if (gpio_is_valid(di->dc_det_pin)) {
+		ret = gpio_request(di->dc_det_pin, "rk818_dc_det");
+		if (ret < 0) {
+			dev_err(di->dev, "Failed to request gpio %d\n",
+				di->dc_det_pin);
+			return;
+		}
+
+		ret = gpio_direction_input(di->dc_det_pin);
+		if (ret) {
+			dev_err(di->dev, "failed to set gpio input\n");
+			goto err;
+		}
+
+		if (gpio_get_value(di->dc_det_pin))
+			irq_flags = IRQF_TRIGGER_LOW;
+		else
+			irq_flags = IRQF_TRIGGER_HIGH;
 		di->dc_det_level = (flags & OF_GPIO_ACTIVE_LOW) ?
 						RK818_DC_IN : RK818_DC_OUT;
 		di->dc_det_irq = gpio_to_irq(di->dc_det_pin);
 
-		ret = request_irq(di->dc_det_irq, rk81x_vbat_dc_det,
-				  IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING,
+		ret = request_irq(di->dc_det_irq, rk81x_vbat_dc_det, irq_flags,
 				  "rk81x_dc_det", di);
 		if (ret != 0) {
 			dev_err(di->dev, "rk818_dc_det_irq request failed!\n");
@@ -4077,6 +4146,36 @@ static int rk81x_bat_parse_dt(struct rk81x_battery *di)
 					 pdata->ocv_size);
 	if (ret < 0)
 		return ret;
+
+	prop = of_find_property(np, "ntc_table", &length);
+	if (!prop) {
+		pdata->ntc_size = 0;
+	} else {
+		ret = of_property_read_u32_index(np, "ntc_temp_min", 1,
+						 &pdata->ntc_temp_min);
+		if (ret) {
+			dev_err(dev, "invalid ntc_temp_range min\n");
+			return -EINVAL;
+		}
+
+		of_property_read_u32_index(np, "ntc_temp_min", 0, &out_value);
+		if (!out_value)
+			pdata->ntc_temp_min = -pdata->ntc_temp_min;
+
+		pdata->ntc_size = length / sizeof(u32);
+	}
+
+	if (pdata->ntc_size) {
+		size = sizeof(*pdata->battery_ntc) * pdata->ntc_size;
+		pdata->battery_ntc = devm_kzalloc(rk818->dev, size, GFP_KERNEL);
+		if (!pdata->battery_ntc)
+			return -ENOMEM;
+		ret = of_property_read_u32_array(np, "ntc_table",
+						 pdata->battery_ntc,
+						 pdata->ntc_size);
+		if (ret < 0)
+			return ret;
+	}
 
 	/******************** charger param  ****************************/
 	ret = of_property_read_u32(np, "max_chrg_currentmA", &out_value);
@@ -4174,13 +4273,16 @@ static int rk81x_bat_parse_dt(struct rk81x_battery *di)
 	    "sleep_exit_current:%d\n"
 	    "support_usb_adp:%d\n"
 	    "support_dc_adp:%d\n"
-	    "power_off_thresd:%d\n",
+	    "power_off_thresd:%d\n"
+	    "ntc_temp_min:%d\n"
+	    "ntc_size=%d\n",
 	    pdata->sense_resistor_mohm, pdata->max_charger_ilimitmA,
 	    pdata->max_charger_currentmA, pdata->max_charger_voltagemV,
 	    cell_cfg->design_capacity, cell_cfg->design_qmax,
 	    cell_cfg->ocv->sleep_enter_current,
 	    cell_cfg->ocv->sleep_exit_current,
-	    support_usb_adp, support_dc_adp, pdata->power_off_thresd);
+	    support_usb_adp, support_dc_adp, pdata->power_off_thresd,
+	    pdata->ntc_temp_min, pdata->ntc_size);
 
 	return 0;
 }

@@ -12,6 +12,7 @@ obj-$(CONFIG_SND_RK_SOC_I2S) += snd-soc-rockchip-i2s.o
 obj-$(CONFIG_SND_RK_SOC_SPDIF) += snd-soc-rockchip-spdif.o
 
 # ROCKCHIP Machine Support
+snd-soc-nau8540-objs := rk_nau8540.o
 snd-soc-wm8900-objs := rk_wm8900.o
 snd-soc-rt5621-objs := rk_rt5621.o
 snd-soc-rt5631-objs := rk_rt5631.o
@@ -27,8 +28,10 @@ snd-soc-cs42l52-objs := rk_cs42l52.o
 snd-soc-aic3111-objs := rk_aic3111.o
 snd-soc-wm8988-objs := rk_wm8988.o
 snd-soc-rk1000-objs := rk_rk1000codec.o
+snd-soc-rk1108-objs := rk_rk1108.o
 snd-soc-rk3036-objs := rk_rk3036.o
 snd-soc-rk312x-objs := rk_rk312x.o
+snd-soc-rk322x-objs := rk_rk322x.o
 snd-soc-wm8994-objs := rk_wm8994.o
 snd-soc-rk610-objs := rk_jetta_codec.o
 snd-soc-rk616-objs := rk_rk616.o
@@ -44,6 +47,7 @@ snd-soc-hdmi-spdif-objs := rk_hdmi_spdif.o
 snd-soc-rt5512-objs := rk_rt5512.o
 snd-soc-cx2070x-objs := rk_cx2070x.o
 
+obj-$(CONFIG_SND_RK_SOC_NAU8540) += snd-soc-nau8540.o
 obj-$(CONFIG_SND_RK_SOC_WM8994) += snd-soc-wm8994.o
 obj-$(CONFIG_SND_RK_SOC_WM8988) += snd-soc-wm8988.o
 obj-$(CONFIG_SND_RK_SOC_WM8900) += snd-soc-wm8900.o
@@ -58,8 +62,10 @@ obj-$(CONFIG_SND_RK_SOC_RT3224) += snd-soc-rt3224.o
 obj-$(CONFIG_SND_RK_SOC_RT5639) += snd-soc-rt5639.o
 obj-$(CONFIG_SND_RK_SOC_RT5616) += snd-soc-rt5616.o
 obj-$(CONFIG_SND_RK_SOC_RK1000) += snd-soc-rk1000.o
+obj-$(CONFIG_SND_RK_SOC_RK1108) += snd-soc-rk1108.o
 obj-$(CONFIG_SND_RK_SOC_RK3036) += snd-soc-rk3036.o
 obj-$(CONFIG_SND_RK_SOC_RK312X) += snd-soc-rk312x.o
+obj-$(CONFIG_SND_RK_SOC_RK322X) += snd-soc-rk322x.o
 obj-$(CONFIG_SND_RK_SOC_SPDIF_CARD) += snd-soc-spdif-card.o
 obj-$(CONFIG_SND_RK_SOC_CS42L52) += snd-soc-cs42l52.o
 obj-$(CONFIG_SND_RK_SOC_AIC3111) += snd-soc-aic3111.o

@@ -252,7 +252,7 @@ static const struct sdmmc_reg dw_mci_regs[] = {
 /* Version ID register define */
 #define SDMMC_GET_VERID(x)		((x) & 0xFFFF)
 /* Card read threshold */
-#define SDMMC_SET_RD_THLD(v, x)		(((v) & 0x1FFF) << 16 | (x))
+#define SDMMC_SET_RD_THLD(v, x)		(((v) & 0xFFF) << 16 | (x))
 
 /* Register access macros */
 #define mci_readl(dev, reg)			\
@@ -344,6 +344,8 @@ struct dw_mci_tuning_data {
 	unsigned int blksz;
 };
 
+extern bool rockchip_jtag_enabled;
+
 /**
  * dw_mci driver data - dw-mshc implementation specific driver data.
  * @caps: mmc subsystem specified capabilities of the controller(s).
@@ -381,6 +383,15 @@ DW_MCI_TYPE_RK3288,
 DW_MCI_TYPE_RK3036,
 DW_MCI_TYPE_RK312X,
 DW_MCI_TYPE_RK3368,
+DW_MCI_TYPE_RK322X,
 };
 
+/* Rockchip implementation specific driver private data */
+struct dw_mci_rockchip_priv_data {
+	enum dw_mci_rockchip_type               ctrl_type;
+	u8                              ciu_div;
+	u32                             sdr_timing;
+	u32                             ddr_timing;
+	u32                             cur_speed;
+};
 #endif /* _DW_MMC_H_ */
